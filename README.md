@@ -24,21 +24,6 @@ xattr -cr ipatool-kit-*
 
 Then run it again.
 
-## Also needed
-
-| Tool | Role |
-|------|------|
-| `ipatool-cpp` (or set `IPATOOL_CPP`) | Auth + download |
-| Go [`ipatool`](https://github.com/majd/ipatool) (`brew install ipatool`) | Purchase history (`list-purchases`) |
-
-Optional faster history helper:
-
-```text
-~/.ipatool/downloader/bin/ipatool-hist
-```
-
-or set `IPATOOL_GO` to an absolute path.
-
 ## Features
 
 - Search / enter IDs / browse lists
@@ -46,6 +31,7 @@ or set `IPATOOL_GO` to an absolute path.
 - Delisted IDs menu (`Apps_ID_List` − Apple history)
 - Multi-select + live search; `*` = all visible
 - Data under `~/.ipatool/downloader/`
+- Built-in App Store auth / download (no extra CLI tools)
 - Optional install via `ideviceinstaller`
 
 ## Environment
@@ -53,8 +39,6 @@ or set `IPATOOL_GO` to an absolute path.
 | Variable | Meaning |
 |----------|---------|
 | `IPATOOL_COUNTRY` | Storefront country (default `us`) |
-| `IPATOOL_CPP` | Path to cpp backend |
-| `IPATOOL_GO` | Path to Go `ipatool` / `ipatool-hist` |
 | `IPA_DOWNLOADER_HOME` | Override data root (default `~/.ipatool/downloader`) |
 
 ## Data layout
@@ -63,10 +47,13 @@ or set `IPATOOL_GO` to an absolute path.
 ~/.ipatool/downloader/
   Apps/    # downloaded IPAs
   Files/   # lists + Owned_Apps_Cache_*.json
-  bin/     # optional ipatool-hist
+~/.ipatool/
+  account.json   # session
+  cookies.json
+  cache/         # SAP runtime cache (first login)
 ```
 
-Session cookies / tokens live under `~/.ipatool/` (backends). **Never commit those.**
+**Never commit** account / cookie files.
 
 ## Disclaimer
 
@@ -74,7 +61,7 @@ Use only with accounts you own and in accordance with Apple’s terms and local 
 
 ## Credits
 
-Inspired by community IPA downloaders and [majd/ipatool](https://github.com/majd/ipatool).
+Inspired by community IPA downloaders and [majd/ipatool](https://github.com/majd/ipatool). Auth/SAP via [ipatool-core](https://crates.io/crates/ipatool-core).
 
 ## Support
 

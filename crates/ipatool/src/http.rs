@@ -1,4 +1,4 @@
-//! Native HTTP App Store client (stage 1: public iTunes Search; SAP ops NotImplemented).
+//! Native App Store client (iTunes Search + authenticated ops via `store`).
 
 use std::collections::BTreeMap;
 
@@ -7,8 +7,9 @@ use crate::client::{
 };
 use crate::error::{IpatoolError, Result};
 use crate::helpers::{build_query, parse_search_json};
+use crate::store;
 
-/// Default client using the public iTunes Search/Lookup HTTP API.
+/// Default client using public iTunes Search plus native authenticated store ops.
 #[derive(Debug, Default, Clone)]
 pub struct HttpClient {
     country: String,
@@ -28,16 +29,16 @@ impl HttpClient {
 }
 
 impl AppStoreClient for HttpClient {
-    fn login(&self, _req: &LoginRequest) -> Result<AuthInfo> {
-        Err(IpatoolError::NotImplemented { op: "auth login" })
+    fn login(&self, req: &LoginRequest) -> Result<AuthInfo> {
+        store::login(req)
     }
 
     fn auth_info(&self, _keychain_passphrase: Option<&str>) -> Result<AuthInfo> {
-        Err(IpatoolError::NotImplemented { op: "auth info" })
+        store::auth_info()
     }
 
     fn revoke(&self) -> Result<()> {
-        Err(IpatoolError::NotImplemented { op: "auth revoke" })
+        store::revoke()
     }
 
     fn search(
@@ -58,38 +59,37 @@ impl AppStoreClient for HttpClient {
 
     fn purchase(
         &self,
-        _app_id: Option<i64>,
+        app_id: Option<i64>,
         _bundle_id: Option<&str>,
         _keychain_passphrase: Option<&str>,
     ) -> Result<()> {
-        Err(IpatoolError::NotImplemented { op: "purchase" })
+        let id = app_id.ok_or_else(|| IpatoolError::msg("app id required"))?;
+        store::purchase(id)
     }
 
-    fn download(&self, _req: &DownloadRequest) -> Result<String> {
-        Err(IpatoolError::NotImplemented { op: "download" })
+    fn download(&self, req: &DownloadRequest) -> Result<String> {
+        store::download(req)
     }
 
     fn list_versions(
         &self,
-        _app_id: Option<i64>,
+        app_id: Option<i64>,
         _bundle_id: Option<&str>,
         _keychain_passphrase: Option<&str>,
     ) -> Result<Vec<String>> {
-        Err(IpatoolError::NotImplemented {
-            op: "list-versions",
-        })
+        let id = app_id.ok_or_else(|| IpatoolError::msg("app id required"))?;
+        store::list_versions(id)
     }
 
     fn get_version_metadata(
         &self,
-        _app_id: Option<i64>,
+        app_id: Option<i64>,
         _bundle_id: Option<&str>,
-        _external_version_id: &str,
+        external_version_id: &str,
         _keychain_passphrase: Option<&str>,
     ) -> Result<VersionInfo> {
-        Err(IpatoolError::NotImplemented {
-            op: "get-version-metadata",
-        })
+        let id = app_id.ok_or_else(|| IpatoolError::msg("app id required"))?;
+        store::get_version_metadata(id, external_version_id)
     }
 
     fn kbsync(
@@ -107,22 +107,4 @@ fn http_get(url: &str) -> Result<String> {
         .map_err(|e| IpatoolError::Http(e.to_string()))?;
     resp.into_string()
         .map_err(|e| IpatoolError::Http(e.to_string()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sap_ops_are_not_implemented() {
-        let c = HttpClient::new();
-        assert!(matches!(
-            c.login(&LoginRequest::default()),
-            Err(IpatoolError::NotImplemented { .. })
-        ));
-        assert!(matches!(
-            c.download(&DownloadRequest::default()),
-            Err(IpatoolError::NotImplemented { .. })
-        ));
-    }
 }

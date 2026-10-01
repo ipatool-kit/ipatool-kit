@@ -1,6 +1,6 @@
 [package]
 name = "ipatool"
-description = "App Store IPA toolkit — pure helpers + native iTunes search client"
+description = "App Store IPA toolkit — native auth, purchase history, and download"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -26,3 +26,7 @@ base64 = { workspace = true }
 hex = { workspace = true }
 plist = { workspace = true }
 ureq = { workspace = true }
+ipatool-core = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+reqwest = { workspace = true }

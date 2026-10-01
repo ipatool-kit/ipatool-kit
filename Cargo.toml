@@ -27,3 +27,7 @@ plist = "1"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 crossterm = "0.28"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+ipatool-core = "0.1.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "time"] }
+url = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "cookies", "stream"] }

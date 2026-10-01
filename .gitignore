@@ -27,9 +27,7 @@ account
 id_rsa*
 *.key
 
-# Local patched Go helper / binaries
-**/ipatool-hist
-**/ipatool-cpp*
+# Local helper binaries (if any)
 **/bin/
 
 # Package noise

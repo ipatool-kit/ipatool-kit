@@ -1,19 +1,17 @@
 //! ipatool-kit interactive menu — alternate screen + full redraw.
 
 mod apps;
-mod cpp_store;
-mod go_store;
+mod owned_cache;
 mod lists;
 mod paths;
 mod ui;
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use ipatool::client::{App, AppStoreClient, AuthInfo};
-use ipatool::{HttpClient, IpatoolError};
+use ipatool::client::{App, AppStoreClient, AuthInfo, DownloadRequest, LoginRequest};
+use ipatool::{store, HttpClient, IpatoolError, OwnedApp};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_NAME: &str = "ipatool-kit";
@@ -29,28 +27,23 @@ struct AppCtx {
     client: HttpClient,
     auth: Option<AuthInfo>,
     country: String,
-    cpp: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
     let _ = paths::ensure_layout();
 
     let country = std::env::var("IPATOOL_COUNTRY").unwrap_or_else(|_| "us".into());
-    let cpp = cpp_store::find_binary();
     let mut ctx = AppCtx {
         lang: load_lang(),
         client: HttpClient::new().with_country(&country),
         auth: None,
         country,
-        cpp,
     };
     apply_ui_lang(ctx.lang);
 
-    if let Some(bin) = ctx.cpp.clone() {
-        if let Ok(info) = cpp_store::auth_info(&bin) {
-            if !info.email.is_empty() {
-                ctx.auth = Some(info);
-            }
+    if let Ok(info) = store::auth_info() {
+        if !info.email.is_empty() {
+            ctx.auth = Some(info);
         }
     }
 
@@ -91,7 +84,7 @@ enum Screen {
     Quit,
 }
 
-/// Leave alternate/raw so child ipatool-cpp / ideviceinstaller progress is visible.
+/// Leave alternate/raw so download/login progress / terminal spam is visible.
 fn with_normal_term<T>(f: impl FnOnce() -> T) -> T {
     let mut out = std::io::stdout();
     let _ = execute!(out, LeaveAlternateScreen, crossterm::cursor::Show);
@@ -103,19 +96,7 @@ fn with_normal_term<T>(f: impl FnOnce() -> T) -> T {
 }
 
 fn header(ctx: &AppCtx) -> Vec<String> {
-    let backend = ctx
-        .cpp
-        .as_ref()
-        .map(|p| {
-            p.file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("ipatool-cpp")
-        })
-        .unwrap_or("no-cpp");
-    let mut h = vec![format!(
-        "{APP_NAME} {VERSION} ({} · {backend})",
-        ctx.country
-    )];
+    let mut h = vec![format!("{APP_NAME} {VERSION} ({})", ctx.country)];
     if let Some(root) = paths::data_root() {
         h.push(format!("data: {}", root.display()));
     }
@@ -145,18 +126,7 @@ fn header(ctx: &AppCtx) -> Vec<String> {
 
 fn login_screen(ctx: &mut AppCtx) -> Result<Screen, IpatoolError> {
     loop {
-        let mut h = header(ctx);
-        if ctx.cpp.is_none() {
-            h.push(String::new());
-            h.push(
-                t(
-                    ctx,
-                    "ipatool-cpp not found — set IPATOOL_CPP",
-                    "ipatool-cpp не найден — задай IPATOOL_CPP",
-                )
-                .into(),
-            );
-        }
+        let h = header(ctx);
         let items = [
             t(ctx, "Log in to Apple account", "Войти в аккаунт Apple"),
             t(
@@ -215,9 +185,7 @@ fn main_screen(ctx: &mut AppCtx) -> Result<bool, IpatoolError> {
             12 => apps_install(ctx)?,
             13 => clear_data(ctx)?,
             14 => {
-                if let Some(bin) = ctx.cpp.clone() {
-                    let _ = with_normal_term(|| cpp_store::auth_revoke(&bin));
-                }
+                let _ = store::revoke();
                 ctx.auth = None;
                 ui::message(&header(ctx), t(ctx, "Logged out.", "Выход выполнен."))?;
                 return Ok(false);
@@ -353,7 +321,7 @@ fn list_then(ctx: &mut AppCtx, kind: ListKind) -> Result<(), IpatoolError> {
         0 => {
             // Prefer Apple owned-apps cache (incl. hidden / removed-from-device).
             let email_s = email.unwrap_or("");
-            if let Some((_, owned)) = go_store::load_cache(email_s) {
+            if let Some((_, owned)) = owned_cache::load_cache(email_s) {
                 owned
                     .into_iter()
                     .map(|a| lists::ListedApp {
@@ -510,17 +478,13 @@ fn ids_then(ctx: &mut AppCtx, action: Action) -> Result<(), IpatoolError> {
 fn apply_action(ctx: &AppCtx, action: Action, app: &App) -> String {
     let name = lists::resolve_name(app.id, &app.name);
     let mut out = format!("→ {name} ({})\n", app.id);
-    let Some(bin) = ctx.cpp.as_ref() else {
-        out.push_str(t(ctx, "ipatool-cpp not found.", "ipatool-cpp не найден."));
-        return out;
-    };
     if ctx.auth.is_none() {
         out.push_str(t(ctx, "Log in first.", "Сначала войди."));
         return out;
     }
 
     match action {
-        Action::Purchase => match with_normal_term(|| cpp_store::purchase(bin, app.id)) {
+        Action::Purchase => match with_normal_term(|| store::purchase(app.id)) {
             Ok(()) => {
                 out.push_str(t(ctx, "purchased", "куплено"));
                 if let Some(email) = account_email(ctx) {
@@ -530,9 +494,9 @@ fn apply_action(ctx: &AppCtx, action: Action, app: &App) -> String {
             Err(e) => out.push_str(&e.to_string()),
         },
         Action::DownloadLatest => {
-            out.push_str(&download_one(ctx, bin, app.id, &name, None));
+            out.push_str(&download_one(ctx, app.id, &name, None));
         }
-        Action::DownloadPickVersion => match pick_versions(ctx, bin, app.id) {
+        Action::DownloadPickVersion => match pick_versions(ctx, app.id) {
             Ok(versions) if versions.is_empty() => {
                 out.push_str(t(ctx, "cancelled", "отменено"));
             }
@@ -546,7 +510,6 @@ fn apply_action(ctx: &AppCtx, action: Action, app: &App) -> String {
                     ));
                     out.push_str(&download_one(
                         ctx,
-                        bin,
                         app.id,
                         &name,
                         Some(ver.external_id.as_str()),
@@ -562,7 +525,6 @@ fn apply_action(ctx: &AppCtx, action: Action, app: &App) -> String {
 
 fn download_one(
     ctx: &AppCtx,
-    bin: &std::path::Path,
     app_id: i64,
     name: &str,
     external_version_id: Option<&str>,
@@ -573,7 +535,17 @@ fn download_one(
     let tmp = apps_dir.join(format!("{app_id}.download.ipa"));
     let _ = std::fs::remove_file(&tmp);
 
-    let result = with_normal_term(|| cpp_store::download(bin, app_id, &tmp, external_version_id));
+    let result = with_normal_term(|| {
+        store::download(&DownloadRequest {
+            app_id: Some(app_id),
+            bundle_id: None,
+            output: Some(tmp.display().to_string()),
+            external_version_id: external_version_id.map(str::to_string),
+            purchase: true,
+            keychain_passphrase: None,
+        })
+        .map(|_| ())
+    });
     match result {
         Ok(()) => {
             // Also scoop any leftover cwd dumps from older ipatool defaults.
@@ -611,11 +583,16 @@ fn download_one(
     }
 }
 
+#[derive(Clone)]
+struct VersionMeta {
+    external_id: String,
+    display_version: String,
+}
+
 fn pick_versions(
     ctx: &AppCtx,
-    bin: &std::path::Path,
     app_id: i64,
-) -> Result<Vec<cpp_store::VersionMeta>, IpatoolError> {
+) -> Result<Vec<VersionMeta>, IpatoolError> {
     ui::message(
         &header(ctx),
         t(
@@ -624,7 +601,7 @@ fn pick_versions(
             "Загрузка списка ID версий…",
         ),
     )?;
-    let ids = with_normal_term(|| cpp_store::list_versions(bin, app_id))?;
+    let ids = with_normal_term(|| store::list_versions(app_id))?;
     // Newest last in Apple dumps; show newest first for picking.
     let mut ids = ids;
     ids.reverse();
@@ -657,12 +634,19 @@ fn pick_versions(
     let mut detailed = Vec::new();
     for i in &pre {
         let id = &ids[*i];
-        let meta = with_normal_term(|| cpp_store::get_version_metadata(bin, app_id, id)).unwrap_or(
-            cpp_store::VersionMeta {
+        let meta = with_normal_term(|| store::get_version_metadata(app_id, id))
+            .map(|v| VersionMeta {
+                external_id: v.external_id,
+                display_version: if v.display_version.is_empty() {
+                    "NA".into()
+                } else {
+                    v.display_version
+                },
+            })
+            .unwrap_or(VersionMeta {
                 external_id: id.clone(),
                 display_version: "NA".into(),
-            },
-        );
+            });
         detailed.push(meta);
     }
 
@@ -704,23 +688,11 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
         ),
     );
 
-    if go_store::find_binary().is_none() {
-        ui::message(
-            &header(ctx),
-            t(
-                ctx,
-                "Go ipatool not found.\nbrew install ipatool\nor put patched binary at ~/.ipatool/downloader/bin/ipatool-hist",
-                "Нет Go ipatool.\nbrew install ipatool\nили положите бинарник в ~/.ipatool/downloader/bin/ipatool-hist",
-            ),
-        )?;
-        return Ok(());
-    }
-
     let email = account_email(ctx).unwrap_or("").to_string();
-    let mut owned: Vec<go_store::OwnedApp> = Vec::new();
+    let mut owned: Vec<OwnedApp> = Vec::new();
     let mut from_cache = false;
 
-    if let Some((when, cached)) = go_store::load_cache(&email) {
+    if let Some((when, cached)) = owned_cache::load_cache(&email) {
         if !cached.is_empty() {
             let label = format!(
                 "{} — {} apps ({when})",
@@ -751,35 +723,15 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     }
 
     if owned.is_empty() {
-        // Stay on alternate screen — leaving it shows a black empty buffer in IDE terminals.
-        let owned_res = go_store::list_all_purchases("", |p| {
-            let total = p.total.map(|t| t.to_string()).unwrap_or_else(|| "?".into());
-            let pages = p
-                .pages_total
-                .map(|t| t.to_string())
-                .unwrap_or_else(|| "?".into());
-            let body = format!(
-                "{}\n\n  page {}/{} · {}/{} apps\n  {}s — {}\n\n{}",
-                t(
-                    ctx,
-                    "Loading Apple purchase history…",
-                    "Загрузка истории покупок Apple…",
-                ),
-                p.page,
-                pages,
-                p.loaded,
-                total,
-                p.elapsed_secs,
-                p.phase,
-                t(
-                    ctx,
-                    "(all platforms; hidden/removed-from-device included)",
-                    "(все платформы; скрытые/удалённые с устройства — да)",
-                ),
-            );
-            let _ = ui::status(&header(ctx), &body);
-        });
-
+        let _ = ui::status(
+            &header(ctx),
+            t(
+                ctx,
+                "Loading Apple purchase history…\n(first run may download SAP runtime)",
+                "Загрузка истории покупок Apple…\n(первый запуск может скачать SAP runtime)",
+            ),
+        );
+        let owned_res = with_normal_term(store::list_purchases);
         owned = match owned_res {
             Ok(v) => v,
             Err(e) => {
@@ -797,7 +749,7 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
             ),
         );
         if !email.is_empty() {
-            let _ = go_store::save_cache(&email, &owned);
+            let _ = owned_cache::save_cache(&email, &owned);
         }
     }
 
@@ -931,7 +883,7 @@ fn deleted_apps_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     };
 
     let email = account_email(ctx).unwrap_or("");
-    let owned_ids: std::collections::BTreeSet<i64> = go_store::load_cache(email)
+    let owned_ids: std::collections::BTreeSet<i64> = owned_cache::load_cache(email)
         .map(|(_, apps)| apps.into_iter().map(|a| a.id).collect())
         .unwrap_or_default();
 
@@ -1179,14 +1131,6 @@ fn clear_data(ctx: &AppCtx) -> Result<(), IpatoolError> {
 }
 
 fn try_login(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
-    let Some(bin) = ctx.cpp.clone() else {
-        ui::message(
-            &header(ctx),
-            t(ctx, "ipatool-cpp not found.", "ipatool-cpp не найден."),
-        )?;
-        return Ok(());
-    };
-
     let email = ui::input_line(&header(ctx), t(ctx, "Email: ", "Email: "))?;
     if email.trim().is_empty() {
         return Ok(());
@@ -1196,7 +1140,23 @@ fn try_login(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
         return Ok(());
     }
 
-    let first = with_normal_term(|| cpp_store::auth_login(&bin, email.trim(), &password, None));
+    let _ = ui::status(
+        &header(ctx),
+        t(
+            ctx,
+            "Signing in… (first run may download SAP runtime)",
+            "Вход… (первый запуск может скачать SAP runtime)",
+        ),
+    );
+
+    let first = with_normal_term(|| {
+        store::login(&LoginRequest {
+            email: email.trim().into(),
+            password: password.clone(),
+            auth_code: None,
+            keychain_passphrase: None,
+        })
+    });
 
     match first {
         Ok(info) => {
@@ -1208,12 +1168,18 @@ fn try_login(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
             let need_2fa = msg.to_lowercase().contains("auth-code")
                 || msg.to_lowercase().contains("two-factor")
                 || msg.contains("2FA")
-                || msg.to_lowercase().contains("code required");
+                || msg.to_lowercase().contains("code required")
+                || msg.to_lowercase().contains("verification");
             if need_2fa {
                 let code = ui::input_line(&header(ctx), t(ctx, "2FA code: ", "Код 2FA: "))?;
                 if !code.trim().is_empty() {
                     let second = with_normal_term(|| {
-                        cpp_store::auth_login(&bin, email.trim(), &password, Some(code.trim()))
+                        store::login(&LoginRequest {
+                            email: email.trim().into(),
+                            password: password.clone(),
+                            auth_code: Some(code.trim().into()),
+                            keychain_passphrase: None,
+                        })
                     });
                     match second {
                         Ok(info) => {
