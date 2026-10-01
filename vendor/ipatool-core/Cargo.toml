@@ -1,6 +1,6 @@
 [package]
 name = "ipatool-kit-core"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "App Store auth, purchase, and download core used by ipatool-kit (SAP + Configurator flow)"
 license = "MIT"
