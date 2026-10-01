@@ -6,15 +6,11 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
-pub mod crypto;
-pub mod device;
 pub mod error;
 pub mod helpers;
 pub mod http;
-pub mod hwid;
 pub mod plist;
 pub mod purchases;
-pub mod sap;
 pub mod session;
 pub mod store;
 

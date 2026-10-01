@@ -1,0 +1,182 @@
+# UI / progress strings. Edit values; keep keys stable.
+
+[action]
+cancelled = "cancelled"
+purchased = "purchased"
+purchasing = "Purchasing…"
+version = "version"
+
+[apps]
+empty = "No apps found in Apps folder."
+installing = "Installing:"
+min_ios = "Min. iOS version:"
+no_idevice = "ideviceinstaller not found. USB install unavailable (AirDrop still works on macOS)."
+select_install = "Select apps to install"
+
+[auth]
+email_prompt = "Email: "
+logged_out = "Logged out."
+login_first = "Log in first."
+login_ok = "Login successful."
+password_prompt = "Password: "
+signing_in = "Signing in…"
+signing_in_2fa = "Signing in with 2FA…"
+signing_in_sap = "Signing in…\n(first run downloads SAP runtime ~33 MB)"
+twofa_prompt = "2FA code: "
+
+[clear]
+apps_done = "Apps folder cleared"
+apps_folder = "Apps in Apps folder"
+apps_removed = "{label}: {n}"
+downloaded = "Downloaded apps list"
+purchased = "Purchased apps list"
+title = "Select data to clear"
+
+[common]
+change_language = "Change language"
+choose = "Choose"
+choose_action = "Choose an action"
+exit = "Exit"
+language = "Language"
+language_updated = "Language updated."
+ok = "ok"
+
+[delisted]
+download_latest = "Download latest"
+download_pick = "Download with version pick"
+need_history = "Load Apple purchase history first (menu item above),\nso we can subtract it from Apps_ID_List."
+none = "No delisted-only apps: everything in Apps_ID_List is already in Apple history."
+purchase_only = "Purchase only"
+select = "Delisted apps"
+title = "Deleted / not in Apple history"
+working = "Working…"
+working_n = "{msg}\n{name} ({id})  {n}/{total}"
+
+[download]
+app_line = "{msg}\n{name} ({id})"
+apps_unavailable = "Apps/ not available."
+missing_ipa = "download ok but .ipa not found"
+saved = "Saved to Apps/:"
+starting = "Starting download (progress on next screen)…"
+working = "Downloading…"
+
+[files]
+missing = "Files/ missing."
+missing_home = "Data Files/ not found. Set IPA_DOWNLOADER_HOME."
+
+[header]
+auth_none = "Not authenticated / search-only."
+auth_ok = "Apple account login successful."
+
+[history]
+apple_purchases = "Apple purchases"
+building = "Building list…"
+cache_label = "{title} — {n} apps ({when})"
+download_n = "{msg}\n{name} ({id})  {n}/{total}"
+empty = "Purchase history is empty."
+loading = "Loading Apple purchase history…"
+loading_sap = "Loading Apple purchase history…\n(first run downloads SAP runtime ~33 MB)"
+open_cache = "Open cached list now"
+preparing = "Preparing purchase history…"
+refresh = "Refresh from Apple (~30–60 sec)"
+saving_cache = "Saving cache"
+saving_n = "{label} ({n})…"
+title = "Purchase history"
+updating_local = "Updating local purchased list"
+
+[ids]
+invalid = "Invalid ID"
+prompt = "App IDs: "
+
+[list]
+all_none = "* = all/none"
+apple_owned = "Apple purchase history (all owned)"
+downloaded_local = "My downloaded (local)"
+empty_account = "List is empty for this account."
+filter = "Filter (empty = all): "
+full_apps_id = "Full Apps_ID_List (GitHub)"
+need_history_cache = "No Apple history cache yet.\nOpen «Purchase history» menu first to load it."
+no_matches = "No matches."
+select = "Select apps from list"
+which = "Which list?"
+
+[login]
+apple = "Log in to Apple account"
+search_only = "Continue in search-only mode"
+
+[main_menu]
+0 = "Search for app and purchase (without downloading)"
+1 = "Search for app and download latest version"
+10 = "Deleted/delisted apps (Apps_ID_List not in Apple history)"
+11 = "Check minimum iOS version for apps in Apps folder"
+12 = "Install apps from Apps folder"
+13 = "Clear data"
+14 = "Log out of Apple account and reset settings"
+15 = "Tip Jar"
+16 = "Change language"
+17 = "Exit"
+2 = "Search for app and download (with version selection)"
+3 = "Enter app IDs and purchase (without downloading)"
+4 = "Enter app IDs and download latest version"
+5 = "Enter app IDs and download (with version selection)"
+6 = "Show list of apps and purchase (without downloading)"
+7 = "Show list of apps and download latest version"
+8 = "Show list of apps and download (with version selection)"
+9 = "Purchase history: Apple owned apps and download"
+__len = "18"
+
+[progress]
+auth = "Authenticating with Apple…"
+auth_2fa = "Authenticating with Apple (2FA)…"
+download_complete = "Download complete."
+download_info = "Requesting download info…"
+downloading_ipa = "Downloading IPA…"
+ensure_license = "Ensuring license (purchase / redownload)…"
+fetch_bag = "Fetching App Store configuration…"
+fetch_versions = "Fetching version list from Apple…"
+history_ios = "Loading purchase history (iPhone/iPad)…"
+history_mac = "Loading purchase history (Mac)…"
+history_ready = "Purchase history ready ({n} apps)."
+loading_account = "Loading account…"
+login_complete = "Login complete."
+patching = "Patching IPA metadata…"
+preparing_session = "Preparing session…"
+purchase_done = "Purchase done."
+purchasing = "Purchasing / claiming license…"
+reauth = "Session expired — re-authenticating…"
+retry_download_info = "Retrying download info…"
+sap_cached = "Loading SAP signer (cached)…"
+sap_download = "Downloading SAP runtime (~33 MB, first run only)…"
+saving_session = "Saving session…"
+version_meta = "Loading version metadata…"
+
+[search]
+app_name = "App name: "
+free = "Free"
+none = "No apps found."
+select = "Select apps"
+
+[status]
+elapsed = "{msg}\nelapsed {secs}s"
+
+[tip]
+fallback = "Could not open browser. Tip link:"
+opened = "Opened DonationAlerts — thank you!"
+
+[ui]
+enter_continue = "Enter to continue"
+hint_input = "Enter confirm · Esc cancel"
+hint_multi = "type search · ↑↓ · Space · * all/none · Enter · Esc"
+hint_select = "↑↓ move · Enter confirm · Esc cancel"
+no_matches = "  (no matches)"
+search = "Search: "
+selected = "selected"
+shown = "shown"
+
+[version]
+fetching_list = "Fetching version list…"
+fetching_meta = "Fetching version metadata…"
+id_label = "version id {id}"
+meta_progress = "{msg}\n({n}/{total}) id {id}"
+select_download = "Select versions to download"
+select_ids = "Select version IDs to inspect (Space)"

@@ -3,13 +3,14 @@ resolver = "2"
 members = [
     "crates/ipatool",
     "crates/ipa-downloader",
+    "vendor/ipatool-core",
 ]
 default-members = ["crates/ipatool", "crates/ipa-downloader"]
 
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "1.0.0"
+version = "1.1.0"
 authors = ["ipatool-kit contributors"]
 
 [workspace.dependencies]
@@ -27,7 +28,8 @@ plist = "1"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 crossterm = "0.28"
 zip = { version = "2", default-features = false, features = ["deflate"] }
-ipatool-core = "0.1.8"
+ipatool-core = { path = "vendor/ipatool-core", version = "0.1.8" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "time"] }
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "cookies", "stream"] }
+toml = "0.8"

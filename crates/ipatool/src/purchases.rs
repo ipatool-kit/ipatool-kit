@@ -37,6 +37,21 @@ pub async fn fetch_owned_apps(
     account: &Account,
     signer: &dyn ActionSigner,
 ) -> Result<Vec<OwnedApp>> {
+    let mut apps = Vec::new();
+    for store in ["34", "13"] {
+        apps.extend(fetch_owned_apps_store(client, account, signer, store).await?);
+    }
+    Ok(merge_owned_apps(apps))
+}
+
+/// One DAAP storefront (`34` = phone/pad, `13` = Mac). Sync callers can
+/// interleave progress between storefronts without capturing `FnMut` in a Send future.
+pub async fn fetch_owned_apps_store(
+    client: &AppleClient,
+    account: &Account,
+    signer: &dyn ActionSigner,
+    store: &str,
+) -> Result<Vec<OwnedApp>> {
     let guid = client.guid().to_string();
     let store_front_base = account
         .store_front
@@ -44,15 +59,13 @@ pub async fn fetch_owned_apps(
         .next()
         .unwrap_or(&account.store_front)
         .to_string();
+    let mut acc = account.clone();
+    acc.store_front = format!("{store_front_base},{store}");
+    fetch_owned_apps_for_storefront(client, &acc, &guid, signer).await
+}
 
-    let mut apps = Vec::new();
-    for store in ["34", "13"] {
-        let mut acc = account.clone();
-        acc.store_front = format!("{store_front_base},{store}");
-        let batch = fetch_owned_apps_for_storefront(client, &acc, &guid, signer).await?;
-        apps.extend(batch);
-    }
-    Ok(merge_owned_apps(apps))
+pub fn merge_apps(apps: Vec<OwnedApp>) -> Vec<OwnedApp> {
+    merge_owned_apps(apps)
 }
 
 async fn fetch_owned_apps_for_storefront(
@@ -61,10 +74,13 @@ async fn fetch_owned_apps_for_storefront(
     guid: &str,
     signer: &dyn ActionSigner,
 ) -> Result<Vec<OwnedApp>> {
+    // Empty POST body with Content-Length: 0 (Go `bytes.NewReader(nil)`).
+    // Without an explicit body reqwest omits Content-Length and Apple returns HTTP 411.
     let login_body = client
         .http()
         .post(format!("{DAAP_BASE}/login"))
         .headers(owned_headers(account, guid)?)
+        .body(Vec::<u8>::new())
         .send()
         .await
         .map_err(|e| IpatoolError::Http(e.to_string()))?;
@@ -413,30 +429,36 @@ fn parse_owned_app(data: &[u8]) -> Result<Option<OwnedApp>> {
         return Ok(None);
     }
 
+    app.platforms = platforms_from_kind(media_kind, supported);
+    Ok(Some(app))
+}
+
+fn platforms_from_kind(media_kind: u64, supported: u64) -> Vec<String> {
+    let mut platforms = Vec::new();
     match media_kind {
-        MEDIA_KIND_MAC => app.platforms.push("macos".into()),
+        MEDIA_KIND_MAC => platforms.push("macos".into()),
         MEDIA_KIND_APPS | MEDIA_KIND_ARCADE => {
-            if supported & 1 != 0 {
-                app.platforms.push("iphone".into());
+            for (mask, name) in [
+                (1u64, "iphone"),
+                (2, "ipad"),
+                (16, "visionos"),
+                (8, "macos"),
+            ] {
+                if supported & mask != 0 {
+                    platforms.push(name.into());
+                }
             }
-            if supported & 2 != 0 {
-                app.platforms.push("ipad".into());
-            }
-            if supported & 16 != 0 {
-                app.platforms.push("visionos".into());
-            }
-            if app.platforms.is_empty() {
-                app.platforms.push("iphone".into());
+            if platforms.is_empty() {
+                platforms.push("unknown".into());
             }
         }
         _ => {
-            if app.platforms.is_empty() {
-                app.platforms.push("iphone".into());
+            if platforms.is_empty() {
+                platforms.push("unknown".into());
             }
         }
     }
-
-    Ok(Some(app))
+    platforms
 }
 
 fn dmap_int(payload: &[u8]) -> Result<u64> {
@@ -481,4 +503,41 @@ fn merge_owned_apps(apps: Vec<OwnedApp>) -> Vec<OwnedApp> {
     let mut out: Vec<_> = map.into_values().collect();
     out.sort_by(|a, b| b.purchase_date.cmp(&a.purchase_date));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mac_mask_bit_8_on_apps_kind() {
+        let p = platforms_from_kind(MEDIA_KIND_APPS, 8);
+        assert_eq!(p, vec!["macos".to_string()]);
+    }
+
+    #[test]
+    fn combined_masks_include_macos() {
+        let p = platforms_from_kind(MEDIA_KIND_APPS, 1 | 2 | 8 | 16);
+        assert_eq!(
+            p,
+            vec![
+                "iphone".to_string(),
+                "ipad".to_string(),
+                "visionos".to_string(),
+                "macos".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_mask_is_unknown_not_iphone() {
+        let p = platforms_from_kind(MEDIA_KIND_APPS, 0);
+        assert_eq!(p, vec!["unknown".to_string()]);
+    }
+
+    #[test]
+    fn mac_media_kind() {
+        let p = platforms_from_kind(MEDIA_KIND_MAC, 0);
+        assert_eq!(p, vec!["macos".to_string()]);
+    }
 }

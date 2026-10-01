@@ -1,8 +1,6 @@
 //! Full-screen redraw menus. Raw mode needs `\r\n` / MoveTo — bare `\n` staircases.
 
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicU8, Ordering};
-
 use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::execute;
@@ -12,27 +10,6 @@ use crossterm::terminal::{
     LeaveAlternateScreen,
 };
 use ipatool::IpatoolError;
-
-const LANG_EN: u8 = 0;
-const LANG_RU: u8 = 1;
-static UI_LANG: AtomicU8 = AtomicU8::new(LANG_EN);
-
-/// Switch UI chrome language (hints, Search:, etc.).
-pub fn set_lang(ru: bool) {
-    UI_LANG.store(if ru { LANG_RU } else { LANG_EN }, Ordering::Relaxed);
-}
-
-fn is_ru() -> bool {
-    UI_LANG.load(Ordering::Relaxed) == LANG_RU
-}
-
-fn tr(en: &'static str, ru: &'static str) -> &'static str {
-    if is_ru() {
-        ru
-    } else {
-        en
-    }
-}
 
 pub struct TermGuard;
 
@@ -123,7 +100,12 @@ fn read_key_event() -> Result<KeyEvent, IpatoolError> {
 }
 
 /// Single-choice list. Full clear each key — never paints over scrollback.
-pub fn select(header: &[String], prompt: &str, items: &[&str]) -> Result<usize, IpatoolError> {
+pub fn select<S: AsRef<str>>(
+    header: &[String],
+    prompt: impl AsRef<str>,
+    items: &[S],
+) -> Result<usize, IpatoolError> {
+    let prompt = prompt.as_ref();
     if items.is_empty() {
         return Err(IpatoolError::Message("empty select".into()));
     }
@@ -147,7 +129,7 @@ pub fn select(header: &[String], prompt: &str, items: &[&str]) -> Result<usize, 
         }
         for (i, item) in items.iter().enumerate().take(end).skip(start) {
             let mark = if i == idx { "❯ " } else { "  " };
-            let row = format!("{mark}{item}");
+            let row = format!("{mark}{}", item.as_ref());
             lines.push(if i == idx {
                 row.cyan().bold().to_string()
             } else {
@@ -158,14 +140,7 @@ pub fn select(header: &[String], prompt: &str, items: &[&str]) -> Result<usize, 
             lines.push("  …".dim().to_string());
         }
         lines.push(String::new());
-        lines.push(
-            tr(
-                "↑↓ move · Enter confirm · Esc cancel",
-                "↑↓ выбор · Enter подтвердить · Esc отмена",
-            )
-            .dim()
-            .to_string(),
-        );
+        lines.push(crate::i18n::t("ui.hint_select").dim().to_string());
         paint(&lines)?;
 
         match read_key()? {
@@ -189,9 +164,10 @@ pub fn select(header: &[String], prompt: &str, items: &[&str]) -> Result<usize, 
 /// Multi-select with live search. Returns indices into the original `items` slice.
 pub fn multi_select(
     header: &[String],
-    prompt: &str,
+    prompt: impl AsRef<str>,
     items: &[String],
 ) -> Result<Vec<usize>, IpatoolError> {
+    let prompt = prompt.as_ref();
     if items.is_empty() {
         return Ok(Vec::new());
     }
@@ -221,14 +197,14 @@ pub fn multi_select(
         let mut lines = header.to_vec();
         lines.push(String::new());
         lines.push(prompt.to_string());
-        lines.push(format!("{}{query}▌", tr("Search: ", "Поиск: ").cyan()));
+        lines.push(format!("{}{query}▌", crate::i18n::t("ui.search").cyan()));
         lines.push(
             format!(
                 "{} {}/{} · {} {selected_n}",
-                tr("shown", "показано"),
+                crate::i18n::t("ui.shown"),
                 visible.len(),
                 items.len(),
-                tr("selected", "выбрано"),
+                crate::i18n::t("ui.selected"),
             )
             .dim()
             .to_string(),
@@ -236,7 +212,7 @@ pub fn multi_select(
         lines.push(String::new());
 
         if visible.is_empty() {
-            lines.push(tr("  (no matches)", "  (нет совпадений)").dim().to_string());
+            lines.push(crate::i18n::t("ui.no_matches").dim().to_string());
         } else {
             let start = if visible.len() <= view {
                 0
@@ -265,10 +241,7 @@ pub fn multi_select(
 
         lines.push(String::new());
         lines.push(
-            tr(
-                "type search · ↑↓ · Space · * all/none · Enter · Esc",
-                "печать = поиск · ↑↓ · Пробел · * всё/снять · Enter · Esc",
-            )
+            crate::i18n::t("ui.hint_multi")
             .dim()
             .to_string(),
         );
@@ -346,7 +319,8 @@ pub fn multi_select(
     }
 }
 
-pub fn input_line(header: &[String], prompt: &str) -> Result<String, IpatoolError> {
+pub fn input_line(header: &[String], prompt: impl AsRef<str>) -> Result<String, IpatoolError> {
+    let prompt = prompt.as_ref();
     let mut buf = String::new();
     loop {
         let mut lines = header.to_vec();
@@ -354,10 +328,7 @@ pub fn input_line(header: &[String], prompt: &str) -> Result<String, IpatoolErro
         lines.push(format!("{prompt}{buf}▌"));
         lines.push(String::new());
         lines.push(
-            tr(
-                "Enter confirm · Esc cancel",
-                "Enter подтвердить · Esc отмена",
-            )
+            crate::i18n::t("ui.hint_input")
             .dim()
             .to_string(),
         );
@@ -375,7 +346,8 @@ pub fn input_line(header: &[String], prompt: &str) -> Result<String, IpatoolErro
     }
 }
 
-pub fn input_password(header: &[String], prompt: &str) -> Result<String, IpatoolError> {
+pub fn input_password(header: &[String], prompt: impl AsRef<str>) -> Result<String, IpatoolError> {
+    let prompt = prompt.as_ref();
     let mut buf = String::new();
     loop {
         let stars: String = "*".repeat(buf.chars().count());
@@ -384,10 +356,7 @@ pub fn input_password(header: &[String], prompt: &str) -> Result<String, Ipatool
         lines.push(format!("{prompt}{stars}▌"));
         lines.push(String::new());
         lines.push(
-            tr(
-                "Enter confirm · Esc cancel",
-                "Enter подтвердить · Esc отмена",
-            )
+            crate::i18n::t("ui.hint_input")
             .dim()
             .to_string(),
         );
@@ -405,18 +374,54 @@ pub fn input_password(header: &[String], prompt: &str) -> Result<String, Ipatool
     }
 }
 
-pub fn message(header: &[String], body: &str) -> Result<(), IpatoolError> {
+pub fn message(header: &[String], body: impl AsRef<str>) -> Result<(), IpatoolError> {
+    show_message(header, body.as_ref(), false)
+}
+
+/// Like [`message`], but also writes the full text to `~/.ipatool/last-error.txt`
+/// and shows that path (for long Apple/HTTP failures).
+pub fn error_message(header: &[String], body: impl AsRef<str>) -> Result<(), IpatoolError> {
+    show_message(header, body.as_ref(), true)
+}
+
+fn show_message(header: &[String], body: &str, save_error: bool) -> Result<(), IpatoolError> {
+    let saved = if save_error {
+        persist_last_error(body)
+    } else {
+        None
+    };
+
+    let (cols, rows) = size().unwrap_or((80, 24));
+    let cols = (cols as usize).saturating_sub(1).max(20);
+    let max_rows = rows as usize;
+
+    let mut content = Vec::new();
+    if let Some(ref path) = saved {
+        content.push(format!("full error saved: {}", path.display()));
+        content.push(String::new());
+    }
+    for part in body.lines() {
+        content.extend(wrap_plain(part, cols));
+    }
+
+    // Reserve header + blank + footer ("Enter…") + optional overflow note.
+    let header_rows = header.len() + 1;
+    let footer_rows = 2;
+    let budget = max_rows.saturating_sub(header_rows + footer_rows).max(1);
+    let overflow = content.len().saturating_sub(budget);
+    let shown = if overflow > 0 {
+        let mut s = content[..budget.saturating_sub(1)].to_vec();
+        s.push(format!("… ({overflow} more lines — open the file above)"));
+        s
+    } else {
+        content
+    };
+
     let mut lines = header.to_vec();
     lines.push(String::new());
-    for part in body.lines() {
-        lines.push(part.to_string());
-    }
+    lines.extend(shown);
     lines.push(String::new());
-    lines.push(
-        tr("Enter to continue", "Enter — продолжить")
-            .dim()
-            .to_string(),
-    );
+    lines.push(crate::i18n::t("ui.enter_continue").dim().to_string());
     paint(&lines)?;
     loop {
         match read_key()? {
@@ -426,8 +431,41 @@ pub fn message(header: &[String], body: &str) -> Result<(), IpatoolError> {
     }
 }
 
+fn persist_last_error(body: &str) -> Option<std::path::PathBuf> {
+    let dir = ipatool::session::ipatool_dir()?;
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("last-error.txt");
+    std::fs::write(&path, body).ok()?;
+    Some(path)
+}
+
+fn wrap_plain(line: &str, width: usize) -> Vec<String> {
+    if line.is_empty() {
+        return vec![String::new()];
+    }
+    if width == 0 {
+        return vec![line.to_string()];
+    }
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut cols = 0usize;
+    for c in line.chars() {
+        if cols >= width {
+            out.push(std::mem::take(&mut cur));
+            cols = 0;
+        }
+        cur.push(c);
+        cols += 1;
+    }
+    if !cur.is_empty() || out.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
 /// Paint a status screen without waiting for a key (live progress).
-pub fn status(header: &[String], body: &str) -> Result<(), IpatoolError> {
+pub fn status(header: &[String], body: impl AsRef<str>) -> Result<(), IpatoolError> {
+    let body = body.as_ref();
     let mut lines = header.to_vec();
     lines.push(String::new());
     for part in body.lines() {

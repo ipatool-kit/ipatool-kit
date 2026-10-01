@@ -107,6 +107,5 @@ pub trait AppStoreClient {
         external_version_id: &str,
         keychain_passphrase: Option<&str>,
     ) -> Result<VersionInfo>;
-    fn kbsync(&self, refresh: bool, keychain_passphrase: Option<&str>)
-        -> Result<serde_json::Value>;
+    fn list_purchases(&self, keychain_passphrase: Option<&str>) -> Result<Vec<crate::OwnedApp>>;
 }

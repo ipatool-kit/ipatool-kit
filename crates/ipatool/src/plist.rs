@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use serde_json::Value as JsonValue;
 
 use crate::error::{IpatoolError, Result};
 
@@ -57,20 +56,6 @@ pub fn base64_decode(s: &str) -> Vec<u8> {
     out
 }
 
-pub(crate) fn xml_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '&' => out.push_str("&amp;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
 fn xml_unescape(s: &str) -> String {
     let out = s
         .replace("&lt;", "<")
@@ -107,54 +92,6 @@ fn xml_unescape(s: &str) -> String {
     res.replace("&amp;", "&")
 }
 
-fn encode_value(v: &PlistValue, indent: usize) -> String {
-    let pad = "\t".repeat(indent);
-    match v {
-        PlistValue::String(s) => format!("<string>{}</string>", xml_escape(s)),
-        PlistValue::Integer(i) => format!("<integer>{i}</integer>"),
-        PlistValue::Real(r) => format!("<real>{r}</real>"),
-        PlistValue::Bool(true) => "<true/>".into(),
-        PlistValue::Bool(false) => "<false/>".into(),
-        PlistValue::Data(d) => format!("<data>{}</data>", base64_encode(d)),
-        PlistValue::Date(s) => format!("<date>{}</date>", xml_escape(s)),
-        PlistValue::Dict(d) => {
-            let mut s = String::from("<dict>\n");
-            for (k, val) in d {
-                s.push_str(&format!(
-                    "{pad}\t<key>{}</key>\n{pad}\t{}\n",
-                    xml_escape(k),
-                    encode_value(val, indent + 1)
-                ));
-            }
-            s.push_str(&pad);
-            s.push_str("</dict>");
-            s
-        }
-        PlistValue::Array(a) => {
-            let mut s = String::from("<array>\n");
-            for item in a {
-                s.push_str(&format!("{pad}\t{}\n", encode_value(item, indent + 1)));
-            }
-            s.push_str(&pad);
-            s.push_str("</array>");
-            s
-        }
-        PlistValue::Null => "<string/>".into(),
-    }
-}
-
-pub fn encode_plist_xml(root: &PlistDict) -> String {
-    let body = encode_value(&PlistValue::Dict(root.clone()), 0);
-    format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
-<plist version=\"1.0\">\n\
-{body}\n\
-</plist>\n"
-    )
-}
-
-/// Decode XML or binary plist. Returns empty dict on failure (C++ behavior).
 pub fn decode_plist(src: &str) -> PlistDict {
     let bytes = src.as_bytes();
     if bytes.len() >= 8 && &bytes[..8] == b"bplist00" {
@@ -401,79 +338,3 @@ pub fn dict_str(d: &PlistDict, key: &str) -> String {
     }
 }
 
-pub fn dict_int(d: &PlistDict, key: &str) -> i64 {
-    match d.get(key) {
-        Some(PlistValue::Integer(i)) => *i,
-        _ => 0,
-    }
-}
-
-/// Convert fixture JSON tree `{type,value}` into PlistValue.
-pub fn value_from_fixture(j: &JsonValue) -> Result<PlistValue> {
-    let ty = j.get("type").and_then(|t| t.as_str()).unwrap_or("null");
-    Ok(match ty {
-        "string" => PlistValue::String(j["value"].as_str().unwrap_or("").into()),
-        "integer" => PlistValue::Integer(j["value"].as_i64().unwrap_or(0)),
-        "real" => PlistValue::Real(j["value"].as_f64().unwrap_or(0.0)),
-        "bool" => PlistValue::Bool(j["value"].as_bool().unwrap_or(false)),
-        "date" => PlistValue::Date(j["value"].as_str().unwrap_or("").into()),
-        "data" => {
-            let hex = j["value_hex"].as_str().unwrap_or("");
-            PlistValue::Data(hex::decode(hex).unwrap_or_default())
-        }
-        "dict" => {
-            let mut d = PlistDict::new();
-            if let Some(obj) = j.get("value").and_then(|v| v.as_object()) {
-                for (k, v) in obj {
-                    d.insert(k.clone(), value_from_fixture(v)?);
-                }
-            }
-            PlistValue::Dict(d)
-        }
-        "array" => {
-            let mut a = Vec::new();
-            if let Some(arr) = j.get("value").and_then(|v| v.as_array()) {
-                for el in arr {
-                    a.push(value_from_fixture(el)?);
-                }
-            }
-            PlistValue::Array(a)
-        }
-        _ => PlistValue::Null,
-    })
-}
-
-pub fn dict_from_fixture(j: &JsonValue) -> Result<PlistDict> {
-    let mut d = PlistDict::new();
-    if let Some(obj) = j.as_object() {
-        for (k, v) in obj {
-            d.insert(k.clone(), value_from_fixture(v)?);
-        }
-    }
-    Ok(d)
-}
-
-pub fn values_approx_eq(a: &PlistValue, b: &PlistValue) -> bool {
-    match (a, b) {
-        (PlistValue::String(x), PlistValue::String(y)) => x == y,
-        (PlistValue::Date(x), PlistValue::Date(y)) => x == y,
-        (PlistValue::Integer(x), PlistValue::Integer(y)) => x == y,
-        (PlistValue::Real(x), PlistValue::Real(y)) => (x - y).abs() < 1e-9,
-        (PlistValue::Bool(x), PlistValue::Bool(y)) => x == y,
-        (PlistValue::Data(x), PlistValue::Data(y)) => x == y,
-        (PlistValue::Dict(x), PlistValue::Dict(y)) => {
-            x.len() == y.len()
-                && x.iter()
-                    .all(|(k, v)| y.get(k).map(|w| values_approx_eq(v, w)).unwrap_or(false))
-        }
-        (PlistValue::Array(x), PlistValue::Array(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(u, v)| values_approx_eq(u, v))
-        }
-        (PlistValue::Null, PlistValue::Null) => true,
-        _ => false,
-    }
-}
-
-pub fn dicts_approx_eq(a: &PlistDict, b: &PlistDict) -> bool {
-    values_approx_eq(&PlistValue::Dict(a.clone()), &PlistValue::Dict(b.clone()))
-}

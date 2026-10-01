@@ -7,21 +7,6 @@ pub enum IpatoolError {
     #[error("{0}")]
     Message(String),
 
-    #[error("authentication tag mismatch")]
-    AuthTagMismatch,
-
-    #[error("invalid MAC address: {0}")]
-    InvalidMac(String),
-
-    #[error("country code mapping for store front ({0}) was not found")]
-    UnknownStorefront(String),
-
-    #[error("hardware ID must be 1-20 bytes")]
-    InvalidHardwareId,
-
-    #[error("{op} is not implemented yet (requires native App Store SAP signing)")]
-    NotImplemented { op: &'static str },
-
     #[error("HTTP error: {0}")]
     Http(String),
 

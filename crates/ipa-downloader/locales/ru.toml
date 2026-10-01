@@ -1,0 +1,182 @@
+# UI / progress strings. Edit values; keep keys stable.
+
+[action]
+cancelled = "отменено"
+purchased = "куплено"
+purchasing = "Покупка…"
+version = "версия"
+
+[apps]
+empty = "В папке Apps нет приложений."
+installing = "Установка:"
+min_ios = "Мин. версия iOS:"
+no_idevice = "ideviceinstaller не найден. USB-установка недоступна (на macOS остаётся AirDrop)."
+select_install = "Выберите приложения для установки"
+
+[auth]
+email_prompt = "Email: "
+logged_out = "Выход выполнен."
+login_first = "Сначала войди."
+login_ok = "Вход выполнен."
+password_prompt = "Пароль: "
+signing_in = "Вход…"
+signing_in_2fa = "Вход с кодом 2FA…"
+signing_in_sap = "Вход…\n(первый запуск скачает SAP runtime ~33 МБ)"
+twofa_prompt = "Код 2FA: "
+
+[clear]
+apps_done = "Папка Apps очищена"
+apps_folder = "Приложения в Apps/"
+apps_removed = "{label}: {n}"
+downloaded = "Список скачанных"
+purchased = "Список купленных"
+title = "Что очистить?"
+
+[common]
+change_language = "Сменить язык"
+choose = "Выберите"
+choose_action = "Выберите действие"
+exit = "Выход"
+language = "Язык"
+language_updated = "Язык обновлён."
+ok = "ок"
+
+[delisted]
+download_latest = "Скачать latest"
+download_pick = "Скачать с выбором версии"
+need_history = "Сначала загрузи историю покупок Apple (пункт выше),\nчтобы вычесть её из Apps_ID_List."
+none = "Нет «только удалённых»: всё из Apps_ID_List уже есть в истории Apple."
+purchase_only = "Только покупка"
+select = "Снятые / удалённые"
+title = "Удалённые / нет в истории Apple"
+working = "Работаю…"
+working_n = "{msg}\n{name} ({id})  {n}/{total}"
+
+[download]
+app_line = "{msg}\n{name} ({id})"
+apps_unavailable = "Apps/ недоступна."
+missing_ipa = "скачано, но .ipa не найден"
+saved = "Сохранено в Apps/:"
+starting = "Старт загрузки (прогресс на следующем экране)…"
+working = "Скачивание…"
+
+[files]
+missing = "Нет Files/."
+missing_home = "Нет Files/. Задай IPA_DOWNLOADER_HOME."
+
+[header]
+auth_none = "Нет входа / только поиск."
+auth_ok = "Вход в аккаунт Apple выполнен."
+
+[history]
+apple_purchases = "Покупки Apple"
+building = "Собираю список…"
+cache_label = "{title} — {n} приложений ({when})"
+download_n = "{msg}\n{name} ({id})  {n}/{total}"
+empty = "История покупок пуста."
+loading = "Загрузка истории покупок Apple…"
+loading_sap = "Загрузка истории покупок Apple…\n(первый запуск скачает SAP runtime ~33 МБ)"
+open_cache = "Открыть кэш сразу"
+preparing = "Готовлю историю покупок…"
+refresh = "Обновить из Apple (~30–60 сек)"
+saving_cache = "Сохраняю кэш"
+saving_n = "{label} ({n})…"
+title = "История покупок"
+updating_local = "Обновляю локальный список покупок"
+
+[ids]
+invalid = "Неверный ID"
+prompt = "ID приложений: "
+
+[list]
+all_none = "* = всё/снять"
+apple_owned = "История покупок Apple (все мои)"
+downloaded_local = "Мои скачанные (локально)"
+empty_account = "Список пуст для этого аккаунта."
+filter = "Фильтр (пусто = все): "
+full_apps_id = "Полный Apps_ID_List (GitHub)"
+need_history_cache = "Нет кэша истории Apple.\nСначала открой пункт «История покупок»."
+no_matches = "Нет совпадений."
+select = "Выберите из списка"
+which = "Какой список?"
+
+[login]
+apple = "Войти в аккаунт Apple"
+search_only = "Продолжить только с поиском"
+
+[main_menu]
+0 = "Поиск приложения и покупка (без скачивания)"
+1 = "Поиск приложения и скачивание последней версии"
+10 = "Удалённые/снятые со стора (нет в истории Apple)"
+11 = "Проверить min iOS для Apps/"
+12 = "Установить из Apps/"
+13 = "Очистить данные"
+14 = "Выйти из аккаунта и сбросить настройки"
+15 = "Чаевые (DonationAlerts)"
+16 = "Сменить язык"
+17 = "Выход"
+2 = "Поиск приложения и скачивание (с выбором версии)"
+3 = "Ввод ID и покупка (без скачивания)"
+4 = "Ввод ID и скачивание последней версии"
+5 = "Ввод ID и скачивание (с выбором версии)"
+6 = "Список приложений и покупка (без скачивания)"
+7 = "Список приложений и скачивание последней версии"
+8 = "Список приложений и скачивание (с выбором версии)"
+9 = "История покупок Apple и скачать"
+__len = "18"
+
+[progress]
+auth = "Авторизация в Apple…"
+auth_2fa = "Авторизация в Apple (2FA)…"
+download_complete = "Скачивание завершено."
+download_info = "Запрашиваю данные для скачивания…"
+downloading_ipa = "Скачиваю IPA…"
+ensure_license = "Проверяю лицензию (покупка / redownload)…"
+fetch_bag = "Загружаю конфигурацию App Store…"
+fetch_versions = "Загружаю список версий из Apple…"
+history_ios = "История покупок (iPhone/iPad)…"
+history_mac = "История покупок (Mac)…"
+history_ready = "История покупок готова ({n} приложений)."
+loading_account = "Загружаю аккаунт…"
+login_complete = "Вход выполнен."
+patching = "Патчу метаданные IPA…"
+preparing_session = "Готовлю сессию…"
+purchase_done = "Покупка готова."
+purchasing = "Покупка / получение лицензии…"
+reauth = "Сессия истекла — повторный вход…"
+retry_download_info = "Повторный запрос данных скачивания…"
+sap_cached = "Загружаю SAP signer (кэш)…"
+sap_download = "Скачиваю SAP runtime (~33 МБ, только первый раз)…"
+saving_session = "Сохраняю сессию…"
+version_meta = "Загружаю метаданные версии…"
+
+[search]
+app_name = "Название: "
+free = "Бесплатно"
+none = "Ничего не найдено."
+select = "Выберите приложения"
+
+[status]
+elapsed = "{msg}\nпрошло {secs} с"
+
+[tip]
+fallback = "Не открылся браузер. Ссылка:"
+opened = "Открыл DonationAlerts — спасибо!"
+
+[ui]
+enter_continue = "Enter — продолжить"
+hint_input = "Enter подтвердить · Esc отмена"
+hint_multi = "печать = поиск · ↑↓ · Пробел · * всё/снять · Enter · Esc"
+hint_select = "↑↓ выбор · Enter подтвердить · Esc отмена"
+no_matches = "  (нет совпадений)"
+search = "Поиск: "
+selected = "выбрано"
+shown = "показано"
+
+[version]
+fetching_list = "Загружаю список версий…"
+fetching_meta = "Загрузка метаданных версий…"
+id_label = "id версии {id}"
+meta_progress = "{msg}\n({n}/{total}) id {id}"
+select_download = "Выберите версии для скачивания"
+select_ids = "Выберите ID версий для просмотра (Space)"

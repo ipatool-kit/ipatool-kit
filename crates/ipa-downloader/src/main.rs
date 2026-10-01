@@ -1,12 +1,17 @@
 //! ipatool-kit interactive menu — alternate screen + full redraw.
 
 mod apps;
+mod i18n;
 mod owned_cache;
 mod lists;
 mod paths;
 mod ui;
 
+use std::io::Write;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -16,14 +21,7 @@ use ipatool::{store, HttpClient, IpatoolError, OwnedApp};
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_NAME: &str = "ipatool-kit";
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Lang {
-    En,
-    Ru,
-}
-
 struct AppCtx {
-    lang: Lang,
     client: HttpClient,
     auth: Option<AuthInfo>,
     country: String,
@@ -34,12 +32,11 @@ fn main() -> ExitCode {
 
     let country = std::env::var("IPATOOL_COUNTRY").unwrap_or_else(|_| "us".into());
     let mut ctx = AppCtx {
-        lang: load_lang(),
         client: HttpClient::new().with_country(&country),
         auth: None,
         country,
     };
-    apply_ui_lang(ctx.lang);
+    i18n::init();
 
     if let Ok(info) = store::auth_info() {
         if !info.email.is_empty() {
@@ -84,7 +81,7 @@ enum Screen {
     Quit,
 }
 
-/// Leave alternate/raw so download/login progress / terminal spam is visible.
+/// Leave alternate/raw so indicatif / install spam is visible on a normal TTY.
 fn with_normal_term<T>(f: impl FnOnce() -> T) -> T {
     let mut out = std::io::stdout();
     let _ = execute!(out, LeaveAlternateScreen, crossterm::cursor::Show);
@@ -95,6 +92,63 @@ fn with_normal_term<T>(f: impl FnOnce() -> T) -> T {
     result
 }
 
+fn paint_live_status(hdr: &[String], phase: &str, secs: u64) {
+    let msg = i18n::t(phase);
+    let secs_s = secs.to_string();
+    let body = i18n::tr(
+        "status.elapsed",
+        &[("msg", msg.as_str()), ("secs", secs_s.as_str())],
+    );
+    let _ = ui::status(hdr, &body);
+}
+
+/// Stay on the TUI screen and refresh status every ~400ms with phase + elapsed
+/// so long SAP/network calls never look frozen.
+fn with_live_status<T>(
+    ctx: &AppCtx,
+    initial: impl AsRef<str>,
+    f: impl FnOnce(&mut dyn FnMut(&str)) -> T,
+) -> T {
+    let hdr = header(ctx);
+    let phase = Arc::new(Mutex::new(initial.as_ref().to_string()));
+    let stop = Arc::new(AtomicBool::new(false));
+    let started = Instant::now();
+
+    {
+        let msg = phase.lock().map(|p| p.clone()).unwrap_or_default();
+        paint_live_status(&hdr, &msg, started.elapsed().as_secs());
+    }
+
+    let phase_t = Arc::clone(&phase);
+    let stop_t = Arc::clone(&stop);
+    let hdr_t = hdr.clone();
+    let tick = std::thread::spawn(move || {
+        while !stop_t.load(Ordering::Relaxed) {
+            let msg = phase_t.lock().map(|g| g.clone()).unwrap_or_default();
+            paint_live_status(&hdr_t, &msg, started.elapsed().as_secs());
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+    });
+
+    let mut progress = |msg: &str| {
+        if let Ok(mut g) = phase.lock() {
+            *g = msg.to_string();
+        }
+        paint_live_status(&hdr, msg, started.elapsed().as_secs());
+    };
+
+    let result = f(&mut progress);
+    stop.store(true, Ordering::Relaxed);
+    let _ = tick.join();
+    result
+}
+
+fn eprintln_progress(msg: &str) {
+    let text = i18n::t(msg);
+    let _ = writeln!(std::io::stderr(), "… {text}");
+    let _ = std::io::stderr().flush();
+}
+
 fn header(ctx: &AppCtx) -> Vec<String> {
     let mut h = vec![format!("{APP_NAME} {VERSION} ({})", ctx.country)];
     if let Some(root) = paths::data_root() {
@@ -103,22 +157,12 @@ fn header(ctx: &AppCtx) -> Vec<String> {
     match &ctx.auth {
         Some(a) => {
             h.push(
-                t(
-                    ctx,
-                    "Apple account login successful.",
-                    "Вход в аккаунт Apple выполнен.",
-                )
-                .into(),
+                i18n::t("header.auth_ok"),
             );
             h.push(format!("{} · {} · {}", a.email, a.name, a.storefront));
         }
         None => h.push(
-            t(
-                ctx,
-                "Not authenticated / search-only.",
-                "Нет входа / только поиск.",
-            )
-            .into(),
+            i18n::t("header.auth_none"),
         ),
     }
     h
@@ -128,16 +172,12 @@ fn login_screen(ctx: &mut AppCtx) -> Result<Screen, IpatoolError> {
     loop {
         let h = header(ctx);
         let items = [
-            t(ctx, "Log in to Apple account", "Войти в аккаунт Apple"),
-            t(
-                ctx,
-                "Continue in search-only mode",
-                "Продолжить только с поиском",
-            ),
-            t(ctx, "Change language", "Сменить язык"),
-            t(ctx, "Exit", "Выход"),
+            i18n::t("login.apple"),
+            i18n::t("login.search_only"),
+            i18n::t("common.change_language"),
+            i18n::t("common.exit"),
         ];
-        let i = match ui::select(&h, t(ctx, "Choose", "Выберите"), &items) {
+        let i = match ui::select(&h, i18n::t("common.choose"), &items) {
             Ok(v) => v,
             Err(_) => return Ok(Screen::Quit),
         };
@@ -158,8 +198,8 @@ fn login_screen(ctx: &mut AppCtx) -> Result<Screen, IpatoolError> {
 fn main_screen(ctx: &mut AppCtx) -> Result<bool, IpatoolError> {
     loop {
         let h = header(ctx);
-        let items = main_items(ctx);
-        let i = match ui::select(&h, t(ctx, "Choose an action", "Выберите действие"), &items)
+        let items = main_items();
+        let i = match ui::select(&h, i18n::t("common.choose_action"), &items)
         {
             Ok(v) => v,
             Err(_) => return Ok(true),
@@ -187,27 +227,18 @@ fn main_screen(ctx: &mut AppCtx) -> Result<bool, IpatoolError> {
             14 => {
                 let _ = store::revoke();
                 ctx.auth = None;
-                ui::message(&header(ctx), t(ctx, "Logged out.", "Выход выполнен."))?;
+                ui::message(&header(ctx), i18n::t("auth.logged_out"))?;
                 return Ok(false);
             }
             15 => match apps::open_tip_jar() {
                 Ok(()) => ui::message(
                     &header(ctx),
-                    t(
-                        ctx,
-                        "Opened DonationAlerts — thank you!",
-                        "Открыл DonationAlerts — спасибо!",
-                    ),
+                    i18n::t("tip.opened"),
                 )?,
-                Err(e) => ui::message(
-                    &header(ctx),
-                    &format!(
+                Err(e) => ui::error_message(
+                    &header(ctx), format!(
                         "{}\nhttps://www.donationalerts.com/r/s00d88\n{e}",
-                        t(
-                            ctx,
-                            "Could not open browser. Tip link:",
-                            "Не открылся браузер. Ссылка:",
-                        )
+                        i18n::t("tip.fallback")
                     ),
                 )?,
             },
@@ -236,7 +267,7 @@ fn account_email(ctx: &AppCtx) -> Option<&str> {
 }
 
 fn search_then(ctx: &mut AppCtx, action: Action) -> Result<(), IpatoolError> {
-    let term = ui::input_line(&header(ctx), t(ctx, "App name: ", "Название: "))?;
+    let term = ui::input_line(&header(ctx), i18n::t("search.app_name"))?;
     let term = term.trim();
     if term.is_empty() {
         return Ok(());
@@ -262,14 +293,14 @@ fn search_then(ctx: &mut AppCtx, action: Action) -> Result<(), IpatoolError> {
         }
         Err(e) => {
             if apps.is_empty() {
-                ui::message(&header(ctx), &e.to_string())?;
+                ui::error_message(&header(ctx), e.to_string())?;
                 return Ok(());
             }
         }
     }
 
     if apps.is_empty() {
-        ui::message(&header(ctx), t(ctx, "No apps found.", "Ничего не найдено."))?;
+        ui::message(&header(ctx), i18n::t("search.none"))?;
         return Ok(());
     }
 
@@ -277,7 +308,7 @@ fn search_then(ctx: &mut AppCtx, action: Action) -> Result<(), IpatoolError> {
         ctx,
         action,
         &apps,
-        t(ctx, "Select apps", "Выберите приложения"),
+        i18n::t("search.select"),
     )
 }
 
@@ -285,31 +316,19 @@ fn list_then(ctx: &mut AppCtx, kind: ListKind) -> Result<(), IpatoolError> {
     let Some(dir) = lists::files_dir() else {
         ui::message(
             &header(ctx),
-            t(
-                ctx,
-                "Data Files/ not found. Set IPA_DOWNLOADER_HOME.",
-                "Нет Files/. Задай IPA_DOWNLOADER_HOME.",
-            ),
+            i18n::t("files.missing_home"),
         )?;
         return Ok(());
     };
 
     let sources = [
-        t(
-            ctx,
-            "Apple purchase history (all owned)",
-            "История покупок Apple (все мои)",
-        ),
-        t(ctx, "My downloaded (local)", "Мои скачанные (локально)"),
-        t(
-            ctx,
-            "Full Apps_ID_List (GitHub)",
-            "Полный Apps_ID_List (GitHub)",
-        ),
+        i18n::t("list.apple_owned"),
+        i18n::t("list.downloaded_local"),
+        i18n::t("list.full_apps_id"),
     ];
     let src = match ui::select(
         &header(ctx),
-        t(ctx, "Which list?", "Какой список?"),
+        i18n::t("list.which"),
         &sources,
     ) {
         Ok(i) => i,
@@ -336,11 +355,7 @@ fn list_then(ctx: &mut AppCtx, kind: ListKind) -> Result<(), IpatoolError> {
             } else {
                 ui::message(
                     &header(ctx),
-                    t(
-                        ctx,
-                        "No Apple history cache yet.\nOpen «Purchase history» menu first to load it.",
-                        "Нет кэша истории Apple.\nСначала открой пункт «История покупок».",
-                    ),
+                    i18n::t("list.need_history_cache"),
                 )?;
                 return Ok(());
             }
@@ -352,18 +367,14 @@ fn list_then(ctx: &mut AppCtx, kind: ListKind) -> Result<(), IpatoolError> {
     if listed.is_empty() {
         ui::message(
             &header(ctx),
-            t(
-                ctx,
-                "List is empty for this account.",
-                "Список пуст для этого аккаунта.",
-            ),
+            i18n::t("list.empty_account"),
         )?;
         return Ok(());
     }
 
     let filter = ui::input_line(
         &header(ctx),
-        t(ctx, "Filter (empty = all): ", "Фильтр (пусто = все): "),
+        i18n::t("list.filter"),
     )?;
     let filter = filter.trim().to_lowercase();
     let listed: Vec<_> = if filter.is_empty() {
@@ -375,7 +386,7 @@ fn list_then(ctx: &mut AppCtx, kind: ListKind) -> Result<(), IpatoolError> {
             .collect()
     };
     if listed.is_empty() {
-        ui::message(&header(ctx), t(ctx, "No matches.", "Нет совпадений."))?;
+        ui::message(&header(ctx), i18n::t("list.no_matches"))?;
         return Ok(());
     }
 
@@ -397,7 +408,7 @@ fn list_then(ctx: &mut AppCtx, kind: ListKind) -> Result<(), IpatoolError> {
         ctx,
         action,
         &apps,
-        t(ctx, "Select apps from list", "Выберите из списка"),
+        i18n::t("list.select"),
     )
 }
 
@@ -405,8 +416,9 @@ fn pick_and_act(
     ctx: &mut AppCtx,
     action: Action,
     apps: &[App],
-    prompt: &str,
+    prompt: impl AsRef<str>,
 ) -> Result<(), IpatoolError> {
+    let prompt = prompt.as_ref();
     let labels: Vec<String> = apps
         .iter()
         .map(|a| {
@@ -414,7 +426,7 @@ fn pick_and_act(
                 format!("{} ({})", a.name, a.id)
             } else {
                 let price = if a.price == 0.0 {
-                    t(ctx, "Free", "Бесплатно").to_string()
+                    i18n::t("search.free")
                 } else {
                     format!("${:.2}", a.price)
                 };
@@ -424,8 +436,7 @@ fn pick_and_act(
         .collect();
 
     let picked = match ui::multi_select(
-        &header(ctx),
-        &format!("{prompt}  ({})", t(ctx, "* = all/none", "* = всё/снять")),
+        &header(ctx), format!("{prompt}  ({})", i18n::t("list.all_none")),
         &labels,
     ) {
         Ok(v) => v,
@@ -445,7 +456,7 @@ fn pick_and_act(
 }
 
 fn ids_then(ctx: &mut AppCtx, action: Action) -> Result<(), IpatoolError> {
-    let line = ui::input_line(&header(ctx), t(ctx, "App IDs: ", "ID приложений: "))?;
+    let line = ui::input_line(&header(ctx), i18n::t("ids.prompt"))?;
     if line.trim().is_empty() {
         return Ok(());
     }
@@ -467,7 +478,7 @@ fn ids_then(ctx: &mut AppCtx, action: Action) -> Result<(), IpatoolError> {
                 report.push('\n');
             }
             Err(_) => {
-                report.push_str(&format!("{}: {tok}\n", t(ctx, "Invalid ID", "Неверный ID")));
+                report.push_str(&format!("{}: {tok}\n", i18n::t("ids.invalid")));
             }
         }
     }
@@ -479,32 +490,36 @@ fn apply_action(ctx: &AppCtx, action: Action, app: &App) -> String {
     let name = lists::resolve_name(app.id, &app.name);
     let mut out = format!("→ {name} ({})\n", app.id);
     if ctx.auth.is_none() {
-        out.push_str(t(ctx, "Log in first.", "Сначала войди."));
+        out.push_str(&i18n::t("auth.login_first"));
         return out;
     }
 
     match action {
-        Action::Purchase => match with_normal_term(|| store::purchase(app.id)) {
-            Ok(()) => {
-                out.push_str(t(ctx, "purchased", "куплено"));
-                if let Some(email) = account_email(ctx) {
-                    let _ = lists::record_purchased(email, app.id, &name);
+        Action::Purchase => {
+            match with_live_status(ctx, i18n::t("action.purchasing"), |p| {
+                store::purchase_with(app.id, p)
+            }) {
+                Ok(()) => {
+                    out.push_str(&i18n::t("action.purchased"));
+                    if let Some(email) = account_email(ctx) {
+                        let _ = lists::record_purchased(email, app.id, &name);
+                    }
                 }
+                Err(e) => out.push_str(&e.to_string()),
             }
-            Err(e) => out.push_str(&e.to_string()),
         },
         Action::DownloadLatest => {
             out.push_str(&download_one(ctx, app.id, &name, None));
         }
         Action::DownloadPickVersion => match pick_versions(ctx, app.id) {
             Ok(versions) if versions.is_empty() => {
-                out.push_str(t(ctx, "cancelled", "отменено"));
+                out.push_str(&i18n::t("action.cancelled"));
             }
             Ok(versions) => {
                 for ver in versions {
                     out.push_str(&format!(
                         "  {} {} ({})\n",
-                        t(ctx, "version", "версия"),
+                        i18n::t("action.version"),
                         ver.display_version,
                         ver.external_id
                     ));
@@ -530,20 +545,31 @@ fn download_one(
     external_version_id: Option<&str>,
 ) -> String {
     let Some(apps_dir) = apps::apps_dir() else {
-        return t(ctx, "Apps/ not available.", "Apps/ недоступна.").into();
+        return i18n::t("download.apps_unavailable");
     };
     let tmp = apps_dir.join(format!("{app_id}.download.ipa"));
     let _ = std::fs::remove_file(&tmp);
 
+    let _ = ui::status(
+        &header(ctx), format!(
+            "{}\n{name} ({app_id})",
+            i18n::t("download.starting")
+        ),
+    );
+
     let result = with_normal_term(|| {
-        store::download(&DownloadRequest {
-            app_id: Some(app_id),
-            bundle_id: None,
-            output: Some(tmp.display().to_string()),
-            external_version_id: external_version_id.map(str::to_string),
-            purchase: true,
-            keychain_passphrase: None,
-        })
+        store::download_with(
+            &DownloadRequest {
+                app_id: Some(app_id),
+                bundle_id: None,
+                output: Some(tmp.display().to_string()),
+                external_version_id: external_version_id.map(str::to_string),
+                purchase: true,
+                keychain_passphrase: None,
+            },
+            &mut eprintln_progress,
+            true,
+        )
         .map(|_| ())
     });
     match result {
@@ -563,19 +589,14 @@ fn download_one(
                 match apps::ingest_downloaded_ipas(app_id, name, account_email(ctx), &from) {
                     Ok(r) if !r.is_empty() => lines.extend(r),
                     Ok(_) => {
-                        return t(
-                            ctx,
-                            "download ok but .ipa not found",
-                            "скачано, но .ipa не найден",
-                        )
-                        .into();
+                        return i18n::t("download.missing_ipa");
                     }
                     Err(e) => return e.to_string(),
                 }
             }
             format!(
                 "{}\n{}",
-                t(ctx, "Saved to Apps/:", "Сохранено в Apps/:"),
+                i18n::t("download.saved"),
                 lines.join("\n")
             )
         }
@@ -593,15 +614,11 @@ fn pick_versions(
     ctx: &AppCtx,
     app_id: i64,
 ) -> Result<Vec<VersionMeta>, IpatoolError> {
-    ui::message(
-        &header(ctx),
-        t(
-            ctx,
-            "Loading version ID list…",
-            "Загрузка списка ID версий…",
-        ),
+    let ids = with_live_status(
+        ctx,
+        i18n::t("version.fetching_list"),
+        |p| store::list_versions_with(app_id, p),
     )?;
-    let ids = with_normal_term(|| store::list_versions(app_id))?;
     // Newest last in Apple dumps; show newest first for picking.
     let mut ids = ids;
     ids.reverse();
@@ -609,11 +626,7 @@ fn pick_versions(
     let labels: Vec<String> = ids.iter().map(|id| format!("version id {id}")).collect();
     let pre = match ui::multi_select(
         &header(ctx),
-        t(
-            ctx,
-            "Select version IDs to inspect (Space)",
-            "Выберите ID версий для просмотра (Space)",
-        ),
+        i18n::t("version.select_ids"),
         &labels,
     ) {
         Ok(v) => v,
@@ -623,30 +636,30 @@ fn pick_versions(
         return Ok(Vec::new());
     }
 
-    ui::message(
-        &header(ctx),
-        t(
-            ctx,
-            "Fetching version metadata…",
-            "Загрузка метаданных версий…",
-        ),
-    )?;
     let mut detailed = Vec::new();
-    for i in &pre {
+    for (n, i) in pre.iter().enumerate() {
         let id = &ids[*i];
-        let meta = with_normal_term(|| store::get_version_metadata(app_id, id))
-            .map(|v| VersionMeta {
-                external_id: v.external_id,
-                display_version: if v.display_version.is_empty() {
-                    "NA".into()
-                } else {
-                    v.display_version
-                },
-            })
-            .unwrap_or(VersionMeta {
-                external_id: id.clone(),
-                display_version: "NA".into(),
-            });
+        let label = format!(
+            "{}\n({}/{}) id {id}",
+            i18n::t("version.fetching_meta"),
+            n + 1,
+            pre.len()
+        );
+        let meta = with_live_status(ctx, &label, |p| {
+            store::get_version_metadata_with(app_id, id, p)
+        })
+        .map(|v| VersionMeta {
+            external_id: v.external_id,
+            display_version: if v.display_version.is_empty() {
+                "NA".into()
+            } else {
+                v.display_version
+            },
+        })
+        .unwrap_or(VersionMeta {
+            external_id: id.clone(),
+            display_version: "NA".into(),
+        });
         detailed.push(meta);
     }
 
@@ -656,11 +669,7 @@ fn pick_versions(
         .collect();
     let final_pick = match ui::multi_select(
         &header(ctx),
-        t(
-            ctx,
-            "Select versions to download",
-            "Выберите версии для скачивания",
-        ),
+        i18n::t("version.select_download"),
         &labels,
     ) {
         Ok(v) => v,
@@ -675,17 +684,13 @@ fn pick_versions(
 
 fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     if ctx.auth.is_none() {
-        ui::message(&header(ctx), t(ctx, "Log in first.", "Сначала войди."))?;
+        ui::message(&header(ctx), i18n::t("auth.login_first"))?;
         return Ok(());
     }
 
     let _ = ui::status(
         &header(ctx),
-        t(
-            ctx,
-            "Preparing purchase history…",
-            "Готовлю историю покупок…",
-        ),
+        i18n::t("history.preparing"),
     );
 
     let email = account_email(ctx).unwrap_or("").to_string();
@@ -696,20 +701,14 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
         if !cached.is_empty() {
             let label = format!(
                 "{} — {} apps ({when})",
-                t(ctx, "Open cached list now", "Открыть кэш сразу"),
+                i18n::t("history.open_cache"),
                 cached.len()
             );
-            let items = [
-                label.as_str(),
-                t(
-                    ctx,
-                    "Refresh from Apple (~30–60 sec)",
-                    "Обновить из Apple (~30–60 сек)",
-                ),
-            ];
+            let refresh = i18n::t("history.refresh");
+            let items = [label.as_str(), refresh.as_str()];
             match ui::select(
                 &header(ctx),
-                t(ctx, "Purchase history", "История покупок"),
+                i18n::t("history.title"),
                 &items,
             ) {
                 Ok(0) => {
@@ -723,28 +722,24 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     }
 
     if owned.is_empty() {
-        let _ = ui::status(
-            &header(ctx),
-            t(
-                ctx,
-                "Loading Apple purchase history…\n(first run may download SAP runtime)",
-                "Загрузка истории покупок Apple…\n(первый запуск может скачать SAP runtime)",
-            ),
-        );
-        let owned_res = with_normal_term(store::list_purchases);
+        let sap_hint = if store::sap_cache_ready() {
+            i18n::t("history.loading")
+        } else {
+            i18n::t("history.loading_sap")
+        };
+        let owned_res = with_live_status(ctx, &sap_hint, |p| store::list_purchases_with(p));
         owned = match owned_res {
             Ok(v) => v,
             Err(e) => {
-                ui::message(&header(ctx), &e.to_string())?;
+                ui::error_message(&header(ctx), e.to_string())?;
                 return Ok(());
             }
         };
 
         let _ = ui::status(
-            &header(ctx),
-            &format!(
+            &header(ctx), format!(
                 "{} ({})…",
-                t(ctx, "Saving cache", "Сохраняю кэш"),
+                i18n::t("history.saving_cache"),
                 owned.len()
             ),
         );
@@ -756,7 +751,7 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     if owned.is_empty() {
         ui::message(
             &header(ctx),
-            t(ctx, "Purchase history is empty.", "История покупок пуста."),
+            i18n::t("history.empty"),
         )?;
         return Ok(());
     }
@@ -764,14 +759,9 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     if !from_cache {
         if let Some(email) = account_email(ctx) {
             let _ = ui::status(
-                &header(ctx),
-                &format!(
+                &header(ctx), format!(
                     "{} ({})…",
-                    t(
-                        ctx,
-                        "Updating local purchased list",
-                        "Обновляю локальный список покупок"
-                    ),
+                    i18n::t("history.updating_local"),
                     owned.len()
                 ),
             );
@@ -790,7 +780,7 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
         }
     }
 
-    let _ = ui::status(&header(ctx), t(ctx, "Building list…", "Собираю список…"));
+    let _ = ui::status(&header(ctx), i18n::t("history.building"));
 
     let labels: Vec<String> = owned
         .iter()
@@ -823,12 +813,11 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
         .collect();
 
     let picked = match ui::multi_select(
-        &header(ctx),
-        &format!(
+        &header(ctx), format!(
             "{} — {}  ({})",
-            t(ctx, "Apple purchases", "Покупки Apple"),
+            i18n::t("history.apple_purchases"),
             owned.len(),
-            t(ctx, "* = all/none", "* = всё/снять"),
+            i18n::t("list.all_none"),
         ),
         &labels,
     ) {
@@ -844,10 +833,9 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     for (n, idx) in picked.into_iter().enumerate() {
         let a = &owned[idx];
         let _ = ui::status(
-            &header(ctx),
-            &format!(
+            &header(ctx), format!(
                 "{}\n{}/{}: {} ({})",
-                t(ctx, "Downloading…", "Скачивание…"),
+                i18n::t("download.working"),
                 n + 1,
                 total_pick,
                 if a.name.is_empty() {
@@ -878,7 +866,7 @@ fn purchase_history_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
 /// Apps in Apps_ID_List that are missing from Apple purchase-history cache (delisted etc.).
 fn deleted_apps_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     let Some(dir) = lists::files_dir() else {
-        ui::message(&header(ctx), t(ctx, "Files/ missing.", "Нет Files/."))?;
+        ui::message(&header(ctx), i18n::t("files.missing"))?;
         return Ok(());
     };
 
@@ -890,11 +878,7 @@ fn deleted_apps_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     if owned_ids.is_empty() {
         ui::message(
             &header(ctx),
-            t(
-                ctx,
-                "Load Apple purchase history first (menu item above),\nso we can subtract it from Apps_ID_List.",
-                "Сначала загрузи историю покупок Apple (пункт выше),\nчтобы вычесть её из Apps_ID_List.",
-            ),
+            i18n::t("delisted.need_history"),
         )?;
         return Ok(());
     }
@@ -907,33 +891,20 @@ fn deleted_apps_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     if deleted.is_empty() {
         ui::message(
             &header(ctx),
-            t(
-                ctx,
-                "No delisted-only apps: everything in Apps_ID_List is already in Apple history.",
-                "Нет «только удалённых»: всё из Apps_ID_List уже есть в истории Apple.",
-            ),
+            i18n::t("delisted.none"),
         )?;
         return Ok(());
     }
 
     let actions = [
-        t(ctx, "Download latest", "Скачать latest"),
-        t(
-            ctx,
-            "Download with version pick",
-            "Скачать с выбором версии",
-        ),
-        t(ctx, "Purchase only", "Только покупка"),
+        i18n::t("delisted.download_latest"),
+        i18n::t("delisted.download_pick"),
+        i18n::t("delisted.purchase_only"),
     ];
     let act_i = match ui::select(
-        &header(ctx),
-        &format!(
+        &header(ctx), format!(
             "{} ({})",
-            t(
-                ctx,
-                "Deleted / not in Apple history",
-                "Удалённые / нет в истории Apple"
-            ),
+            i18n::t("delisted.title"),
             deleted.len()
         ),
         &actions,
@@ -953,12 +924,11 @@ fn deleted_apps_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
         .collect();
 
     let picked = match ui::multi_select(
-        &header(ctx),
-        &format!(
+        &header(ctx), format!(
             "{} — {}  ({})",
-            t(ctx, "Delisted apps", "Снятые / удалённые"),
+            i18n::t("delisted.select"),
             deleted.len(),
-            t(ctx, "* = all/none", "* = всё/снять"),
+            i18n::t("list.all_none"),
         ),
         &labels,
     ) {
@@ -981,10 +951,9 @@ fn deleted_apps_then(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     let mut report = String::new();
     for (n, app) in apps.iter().enumerate() {
         let _ = ui::status(
-            &header(ctx),
-            &format!(
+            &header(ctx), format!(
                 "{}\n{}/{}: {} ({})",
-                t(ctx, "Working…", "Работаю…"),
+                i18n::t("delisted.working"),
                 n + 1,
                 apps.len(),
                 app.name,
@@ -1005,21 +974,16 @@ fn apps_min_ios(ctx: &AppCtx) -> Result<(), IpatoolError> {
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "Apps/".into());
         ui::message(
-            &header(ctx),
-            &format!(
+            &header(ctx), format!(
                 "{}\n{}",
-                t(
-                    ctx,
-                    "No apps found in Apps folder.",
-                    "В папке Apps нет приложений.",
-                ),
+                i18n::t("apps.empty"),
                 where_
             ),
         )?;
         return Ok(());
     }
     let mut report = String::new();
-    report.push_str(t(ctx, "Min. iOS version:", "Мин. версия iOS:"));
+    report.push_str(&i18n::t("apps.min_ios"));
     report.push('\n');
     for (i, f) in files.iter().enumerate() {
         report.push_str(&format!(
@@ -1037,11 +1001,7 @@ fn apps_install(ctx: &AppCtx) -> Result<(), IpatoolError> {
     let Some(idevice) = apps::find_ideviceinstaller() else {
         ui::message(
             &header(ctx),
-            t(
-                ctx,
-                "ideviceinstaller not found. USB install unavailable (AirDrop still works on macOS).",
-                "ideviceinstaller не найден. USB-установка недоступна (на macOS остаётся AirDrop).",
-            ),
+            i18n::t("apps.no_idevice"),
         )?;
         return Ok(());
     };
@@ -1049,11 +1009,7 @@ fn apps_install(ctx: &AppCtx) -> Result<(), IpatoolError> {
     if files.is_empty() {
         ui::message(
             &header(ctx),
-            t(
-                ctx,
-                "No apps found in Apps folder.",
-                "В папке Apps нет приложений.",
-            ),
+            i18n::t("apps.empty"),
         )?;
         return Ok(());
     }
@@ -1063,11 +1019,7 @@ fn apps_install(ctx: &AppCtx) -> Result<(), IpatoolError> {
         .collect();
     let picked = match ui::multi_select(
         &header(ctx),
-        t(
-            ctx,
-            "Select apps to install",
-            "Выберите приложения для установки",
-        ),
+        i18n::t("apps.select_install"),
         &labels,
     ) {
         Ok(v) => v,
@@ -1082,11 +1034,11 @@ fn apps_install(ctx: &AppCtx) -> Result<(), IpatoolError> {
         let f = &files[i];
         report.push_str(&format!(
             "{} {}\n",
-            t(ctx, "Installing:", "Установка:"),
+            i18n::t("apps.installing"),
             f.file_name
         ));
         match with_normal_term(|| apps::install_ipa(&idevice, &f.path)) {
-            Ok(()) => report.push_str(&format!("{}\n", t(ctx, "ok", "ок"))),
+            Ok(()) => report.push_str(&format!("{}\n", i18n::t("common.ok"))),
             Err(e) => report.push_str(&format!("{e}\n")),
         }
     }
@@ -1096,13 +1048,13 @@ fn apps_install(ctx: &AppCtx) -> Result<(), IpatoolError> {
 
 fn clear_data(ctx: &AppCtx) -> Result<(), IpatoolError> {
     let items = [
-        t(ctx, "Purchased apps list", "Список купленных"),
-        t(ctx, "Downloaded apps list", "Список скачанных"),
-        t(ctx, "Apps in Apps folder", "Приложения в Apps/"),
+        i18n::t("clear.purchased"),
+        i18n::t("clear.downloaded"),
+        i18n::t("clear.apps_folder"),
     ];
     let i = match ui::select(
         &header(ctx),
-        t(ctx, "Select data to clear", "Что очистить?"),
+        i18n::t("clear.title"),
         &items,
     ) {
         Ok(v) => v,
@@ -1121,7 +1073,7 @@ fn clear_data(ctx: &AppCtx) -> Result<(), IpatoolError> {
         _ => match apps::clear_all_ipas() {
             Ok(n) => format!(
                 "{} ({n})",
-                t(ctx, "Apps folder cleared", "Папка Apps очищена")
+                i18n::t("clear.apps_done")
             ),
             Err(e) => e.to_string(),
         },
@@ -1131,37 +1083,37 @@ fn clear_data(ctx: &AppCtx) -> Result<(), IpatoolError> {
 }
 
 fn try_login(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
-    let email = ui::input_line(&header(ctx), t(ctx, "Email: ", "Email: "))?;
+    let email = ui::input_line(&header(ctx), i18n::t("auth.email_prompt"))?;
     if email.trim().is_empty() {
         return Ok(());
     }
-    let password = ui::input_password(&header(ctx), t(ctx, "Password: ", "Пароль: "))?;
+    let password = ui::input_password(&header(ctx), i18n::t("auth.password_prompt"))?;
     if password.is_empty() {
         return Ok(());
     }
 
-    let _ = ui::status(
-        &header(ctx),
-        t(
-            ctx,
-            "Signing in… (first run may download SAP runtime)",
-            "Вход… (первый запуск может скачать SAP runtime)",
-        ),
-    );
+    let sap_hint = if store::sap_cache_ready() {
+        i18n::t("auth.signing_in")
+    } else {
+        i18n::t("auth.signing_in_sap")
+    };
 
-    let first = with_normal_term(|| {
-        store::login(&LoginRequest {
-            email: email.trim().into(),
-            password: password.clone(),
-            auth_code: None,
-            keychain_passphrase: None,
-        })
+    let first = with_live_status(ctx, &sap_hint, |p| {
+        store::login_with(
+            &LoginRequest {
+                email: email.trim().into(),
+                password: password.clone(),
+                auth_code: None,
+                keychain_passphrase: None,
+            },
+            p,
+        )
     });
 
     match first {
         Ok(info) => {
             ctx.auth = Some(info);
-            ui::message(&header(ctx), t(ctx, "Login successful.", "Вход выполнен."))?;
+            ui::message(&header(ctx), i18n::t("auth.login_ok"))?;
         }
         Err(e) => {
             let msg = e.to_string();
@@ -1171,29 +1123,36 @@ fn try_login(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
                 || msg.to_lowercase().contains("code required")
                 || msg.to_lowercase().contains("verification");
             if need_2fa {
-                let code = ui::input_line(&header(ctx), t(ctx, "2FA code: ", "Код 2FA: "))?;
+                let code = ui::input_line(&header(ctx), i18n::t("auth.twofa_prompt"))?;
                 if !code.trim().is_empty() {
-                    let second = with_normal_term(|| {
-                        store::login(&LoginRequest {
-                            email: email.trim().into(),
-                            password: password.clone(),
-                            auth_code: Some(code.trim().into()),
-                            keychain_passphrase: None,
-                        })
-                    });
+                    let second = with_live_status(
+                        ctx,
+                        i18n::t("auth.signing_in_2fa"),
+                        |p| {
+                            store::login_with(
+                                &LoginRequest {
+                                    email: email.trim().into(),
+                                    password: password.clone(),
+                                    auth_code: Some(code.trim().into()),
+                                    keychain_passphrase: None,
+                                },
+                                p,
+                            )
+                        },
+                    );
                     match second {
                         Ok(info) => {
                             ctx.auth = Some(info);
                             ui::message(
                                 &header(ctx),
-                                t(ctx, "Login successful.", "Вход выполнен."),
+                                i18n::t("auth.login_ok"),
                             )?;
                         }
-                        Err(e2) => ui::message(&header(ctx), &e2.to_string())?,
+                        Err(e2) => ui::error_message(&header(ctx), e2.to_string())?,
                     }
                 }
             } else {
-                ui::message(&header(ctx), &msg)?;
+                ui::error_message(&header(ctx), &msg)?;
             }
         }
     }
@@ -1202,101 +1161,15 @@ fn try_login(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
 
 fn change_language(ctx: &mut AppCtx) -> Result<(), IpatoolError> {
     let items = ["Русский", "English"];
-    let i = ui::select(&header(ctx), t(ctx, "Language", "Язык"), &items)?;
-    ctx.lang = if i == 0 { Lang::Ru } else { Lang::En };
-    apply_ui_lang(ctx.lang);
-    save_lang(ctx.lang);
-    ui::message(&header(ctx), t(ctx, "Language updated.", "Язык обновлён."))?;
+    let i = ui::select(&header(ctx), i18n::t("common.language"), &items)?;
+    let lang = if i == 0 { i18n::Lang::Ru } else { i18n::Lang::En };
+    i18n::set_lang(lang);
+    i18n::save_lang(lang);
+    ui::message(&header(ctx), i18n::t("common.language_updated"))?;
     Ok(())
 }
 
-fn apply_ui_lang(lang: Lang) {
-    ui::set_lang(matches!(lang, Lang::Ru));
+fn main_items() -> Vec<String> {
+    i18n::main_menu_items()
 }
 
-fn load_lang() -> Lang {
-    if let Some(root) = paths::data_root() {
-        let p = root.join("lang");
-        if let Ok(s) = std::fs::read_to_string(p) {
-            let s = s.trim().to_ascii_lowercase();
-            if s.starts_with("ru") || s == "russian" || s == "русский" {
-                return Lang::Ru;
-            }
-            if s.starts_with("en") || s == "english" {
-                return Lang::En;
-            }
-        }
-    }
-    // Default from system locale when no saved preference.
-    let loc = std::env::var("LANG")
-        .or_else(|_| std::env::var("LC_ALL"))
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if loc.starts_with("ru") {
-        Lang::Ru
-    } else {
-        Lang::En
-    }
-}
-
-fn save_lang(lang: Lang) {
-    if let Some(root) = paths::data_root() {
-        let tag = match lang {
-            Lang::Ru => "ru\n",
-            Lang::En => "en\n",
-        };
-        let _ = std::fs::write(root.join("lang"), tag);
-    }
-}
-
-fn main_items(ctx: &AppCtx) -> Vec<&'static str> {
-    match ctx.lang {
-        Lang::En => vec![
-            "Search for app and purchase (without downloading)",
-            "Search for app and download latest version",
-            "Search for app and download (with version selection)",
-            "Enter app IDs and purchase (without downloading)",
-            "Enter app IDs and download latest version",
-            "Enter app IDs and download (with version selection)",
-            "Show list of apps and purchase (without downloading)",
-            "Show list of apps and download latest version",
-            "Show list of apps and download (with version selection)",
-            "Purchase history: Apple owned apps and download",
-            "Deleted/delisted apps (Apps_ID_List not in Apple history)",
-            "Check minimum iOS version for apps in Apps folder",
-            "Install apps from Apps folder",
-            "Clear data",
-            "Log out of Apple account and reset settings",
-            "Tip Jar",
-            "Change language",
-            "Exit",
-        ],
-        Lang::Ru => vec![
-            "Поиск приложения и покупка (без скачивания)",
-            "Поиск приложения и скачивание последней версии",
-            "Поиск приложения и скачивание (с выбором версии)",
-            "Ввод ID и покупка (без скачивания)",
-            "Ввод ID и скачивание последней версии",
-            "Ввод ID и скачивание (с выбором версии)",
-            "Список приложений и покупка (без скачивания)",
-            "Список приложений и скачивание последней версии",
-            "Список приложений и скачивание (с выбором версии)",
-            "История покупок Apple и скачать",
-            "Удалённые/снятые со стора (нет в истории Apple)",
-            "Проверить min iOS для Apps/",
-            "Установить из Apps/",
-            "Очистить данные",
-            "Выйти из аккаунта и сбросить настройки",
-            "Чаевые (DonationAlerts)",
-            "Сменить язык",
-            "Выход",
-        ],
-    }
-}
-
-fn t<'a>(ctx: &AppCtx, en: &'a str, ru: &'a str) -> &'a str {
-    match ctx.lang {
-        Lang::En => en,
-        Lang::Ru => ru,
-    }
-}

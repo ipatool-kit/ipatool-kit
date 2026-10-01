@@ -92,12 +92,8 @@ impl AppStoreClient for HttpClient {
         store::get_version_metadata(id, external_version_id)
     }
 
-    fn kbsync(
-        &self,
-        _refresh: bool,
-        _keychain_passphrase: Option<&str>,
-    ) -> Result<serde_json::Value> {
-        Err(IpatoolError::NotImplemented { op: "kbsync" })
+    fn list_purchases(&self, _keychain_passphrase: Option<&str>) -> Result<Vec<crate::OwnedApp>> {
+        store::list_purchases()
     }
 }
 
