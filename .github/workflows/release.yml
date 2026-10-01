@@ -20,13 +20,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # All targets build natively on matching runners (no cross / zig).
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             bin: ipatool-kit
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             bin: ipatool-kit
-            cross: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             bin: ipatool-kit.exe
@@ -48,17 +48,8 @@ jobs:
         with:
           shared-key: release-${{ matrix.target }}
 
-      - name: Install cross (Linux aarch64)
-        if: matrix.cross
-        run: cargo install cross --locked
-
-      - name: Build (native)
-        if: ${{ !matrix.cross }}
+      - name: Build
         run: cargo build -p ipa-downloader --release --target ${{ matrix.target }}
-
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build -p ipa-downloader --release --target ${{ matrix.target }}
 
       - name: Stage binary
         shell: bash
