@@ -9,12 +9,12 @@ default-members = ["crates/ipatool"]
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "1.1.1"
+version = "1.1.2"
 authors = ["ipatool-kit contributors"]
 repository = "https://github.com/ipatool-kit/ipatool-kit"
 
 [workspace.dependencies]
-ipatool-kit = { path = "crates/ipatool", version = "1.1.1" }
+ipatool-kit = { path = "crates/ipatool", version = "1.1.2" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

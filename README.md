@@ -8,7 +8,7 @@ Interactive terminal toolkit and Rust library for browsing your App Store librar
   <img src="https://raw.githubusercontent.com/ipatool-kit/ipatool-kit/main/assets/demo.gif" alt="ipatool-kit demo (sample data)" width="840">
 </p>
 
-<p align="center"><sub>Animated mockup with sample data — not a live session.</sub></p>
+<p align="center"><sub>Terminal demo (sample session).</sub></p>
 
 [![crates.io](https://img.shields.io/crates/v/ipatool-kit.svg)](https://crates.io/crates/ipatool-kit)
 [![docs.rs](https://img.shields.io/docsrs/ipatool-kit)](https://docs.rs/ipatool-kit)
