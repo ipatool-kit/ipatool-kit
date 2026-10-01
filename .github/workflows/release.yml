@@ -14,27 +14,28 @@ env:
 
 jobs:
   build:
-    name: build (${{ matrix.target }})
+    name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # All targets build natively on matching runners (no cross / zig).
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+          - name: linux-x86_64
+            os: ubuntu-latest
+            rust_targets: x86_64-unknown-linux-gnu
             bin: ipatool-kit
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+            rust_targets: aarch64-unknown-linux-gnu
             bin: ipatool-kit
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+          - name: windows-x86_64
+            os: windows-latest
+            rust_targets: x86_64-pc-windows-msvc
             bin: ipatool-kit.exe
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            bin: ipatool-kit
-          - os: macos-13
-            target: x86_64-apple-darwin
+          # One modern macOS runner builds arm64 + x86_64 (Apple linker, no macos-13).
+          - name: macos
+            os: macos-latest
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             bin: ipatool-kit
 
     steps:
@@ -42,33 +43,34 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_targets }}
 
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-${{ matrix.target }}
+          shared-key: release-${{ matrix.name }}
 
       - name: Build
-        run: cargo build -p ipa-downloader --release --target ${{ matrix.target }}
-
-      - name: Stage binary
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          SRC="target/${{ matrix.target }}/release/${{ matrix.bin }}"
-          OUT="dist/ipatool-kit-${{ matrix.target }}"
-          if [[ "${{ matrix.bin }}" == *.exe ]]; then
-            OUT="${OUT}.exe"
-          fi
-          cp "$SRC" "$OUT"
-          echo "Staged $OUT"
+          IFS=',' read -ra targets <<< "${{ matrix.rust_targets }}"
+          for target in "${targets[@]}"; do
+            cargo build -p ipa-downloader --release --target "$target"
+            src="target/${target}/release/${{ matrix.bin }}"
+            out="dist/ipatool-kit-${target}"
+            if [[ "${{ matrix.bin }}" == *.exe ]]; then
+              out="${out}.exe"
+            fi
+            cp "$src" "$out"
+            echo "Staged $out"
+          done
           ls -la dist/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ipatool-kit-${{ matrix.target }}
+          name: ipatool-kit-${{ matrix.name }}
           path: dist/*
 
   publish:
