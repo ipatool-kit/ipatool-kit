@@ -1,0 +1,20 @@
+[package]
+name = "ipa-downloader"
+description = "ipatool-kit interactive TUI for owned IPA downloads"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "ipatool-kit"
+path = "src/main.rs"
+
+[dependencies]
+ipatool = { workspace = true }
+crossterm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+zip = { workspace = true }
+ureq = { workspace = true }

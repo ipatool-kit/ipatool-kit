@@ -1,0 +1,36 @@
+# Generated / local
+/target/
+**/*.rs.bk
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# App data & downloads (never commit)
+Apps/
+Files/
+*.ipa
+*.pkg
+*.dmg
+.ipatool/
+**/Owned_Apps_Cache*.json
+**/Purchased_IDs.json
+**/Downloaded_IDs.json
+cookies
+cookies.*
+account
+.env
+.env.*
+*.pem
+*.p12
+id_rsa*
+*.key
+
+# Local patched Go helper / binaries
+**/ipatool-hist
+**/ipatool-cpp*
+**/bin/
+
+# Package noise
+Cargo.lock.bak
