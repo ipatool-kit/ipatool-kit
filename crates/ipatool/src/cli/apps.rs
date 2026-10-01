@@ -5,8 +5,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use ipatool::plist::{self, dict_str};
-use ipatool::IpatoolError;
+use ipatool_kit::plist::{self, dict_str};
+use ipatool_kit::IpatoolError;
 use zip::ZipArchive;
 
 use crate::lists;

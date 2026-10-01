@@ -56,7 +56,7 @@ jobs:
           mkdir -p dist
           IFS=',' read -ra targets <<< "${{ matrix.rust_targets }}"
           for target in "${targets[@]}"; do
-            cargo build -p ipa-downloader --release --target "$target"
+            cargo build -p ipatool-kit --release --target "$target"
             src="target/${target}/release/${{ matrix.bin }}"
             out="dist/ipatool-kit-${target}"
             if [[ "${{ matrix.bin }}" == *.exe ]]; then

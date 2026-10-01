@@ -8,7 +8,7 @@ const APPS_ID_LIST_URL: &str =
     "https://raw.githubusercontent.com/ipatool-kit/ipatool-kit/main/assets/Apps_ID_List.txt";
 
 /// Bundled starter list (embedded at compile time).
-const APPS_ID_LIST_BUNDLED: &str = include_str!("../../../assets/Apps_ID_List.txt");
+const APPS_ID_LIST_BUNDLED: &str = include_str!("../../assets/Apps_ID_List.txt");
 
 /// `~/.ipatool/downloader` or `$IPATOOL_KIT_HOME` / `$IPA_DOWNLOADER_HOME`.
 pub fn data_root() -> Option<PathBuf> {

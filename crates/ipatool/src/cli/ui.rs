@@ -9,7 +9,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, size, Clear, ClearType, EnterAlternateScreen,
     LeaveAlternateScreen,
 };
-use ipatool::IpatoolError;
+use ipatool_kit::IpatoolError;
 
 pub struct TermGuard;
 
@@ -432,7 +432,7 @@ fn show_message(header: &[String], body: &str, save_error: bool) -> Result<(), I
 }
 
 fn persist_last_error(body: &str) -> Option<std::path::PathBuf> {
-    let dir = ipatool::session::ipatool_dir()?;
+    let dir = ipatool_kit::session::ipatool_dir()?;
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("last-error.txt");
     std::fs::write(&path, body).ok()?;

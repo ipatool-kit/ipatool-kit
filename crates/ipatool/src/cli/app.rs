@@ -15,8 +15,8 @@ use std::time::Instant;
 
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use ipatool::client::{App, AppStoreClient, AuthInfo, DownloadRequest, LoginRequest};
-use ipatool::{store, HttpClient, IpatoolError, OwnedApp};
+use ipatool_kit::client::{App, AppStoreClient, AuthInfo, DownloadRequest, LoginRequest};
+use ipatool_kit::{store, HttpClient, IpatoolError, OwnedApp};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_NAME: &str = "ipatool-kit";

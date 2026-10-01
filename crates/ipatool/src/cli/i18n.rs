@@ -17,8 +17,8 @@ static TABLES: OnceLock<[HashMap<String, String>; 2]> = OnceLock::new();
 fn tables() -> &'static [HashMap<String, String>; 2] {
     TABLES.get_or_init(|| {
         [
-            parse_locale(include_str!("../locales/en.toml")),
-            parse_locale(include_str!("../locales/ru.toml")),
+            parse_locale(include_str!("../../locales/en.toml")),
+            parse_locale(include_str!("../../locales/ru.toml")),
         ]
     })
 }

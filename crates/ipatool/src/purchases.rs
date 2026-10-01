@@ -74,12 +74,14 @@ async fn fetch_owned_apps_for_storefront(
     guid: &str,
     signer: &dyn ActionSigner,
 ) -> Result<Vec<OwnedApp>> {
-    // Empty POST body with Content-Length: 0 (Go `bytes.NewReader(nil)`).
-    // Without an explicit body reqwest omits Content-Length and Apple returns HTTP 411.
+    // Empty POST: Go `bytes.NewReader(nil)` always sends Content-Length: 0.
+    // reqwest `.body(Vec::new())` alone sends NEITHER Content-Length NOR Transfer-Encoding
+    // → Apple DAAP returns HTTP 411 Length Required.
     let login_body = client
         .http()
         .post(format!("{DAAP_BASE}/login"))
         .headers(owned_headers(account, guid)?)
+        .header(reqwest::header::CONTENT_LENGTH, "0")
         .body(Vec::<u8>::new())
         .send()
         .await

@@ -1,18 +1,36 @@
 [package]
-name = "ipatool"
-description = "App Store IPA toolkit — native auth, purchase history, and download"
+name = "ipatool-kit"
+description = "App Store IPA toolkit — library + interactive TUI for owned IPA downloads"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+repository = "https://github.com/ipatool-kit/ipatool-kit"
+homepage = "https://github.com/ipatool-kit/ipatool-kit"
+documentation = "https://docs.rs/ipatool-kit"
 readme = "../../README.md"
-keywords = ["appstore", "ipa", "itunes", "apple"]
-categories = ["api-bindings"]
+keywords = ["appstore", "ipa", "itunes", "apple", "ios"]
+categories = ["api-bindings", "command-line-utilities"]
 include = [
     "src/**",
+    "locales/**",
+    "assets/**",
+    "examples/**",
     "Cargo.toml",
     "LICENSE",
 ]
+
+[lib]
+name = "ipatool_kit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ipatool-kit"
+path = "src/cli/app.rs"
+
+[[example]]
+name = "search"
+path = "examples/search.rs"
 
 [dependencies]
 serde = { workspace = true }
@@ -21,6 +39,9 @@ thiserror = { workspace = true }
 base64 = { workspace = true }
 plist = { workspace = true }
 ureq = { workspace = true }
-ipatool-core = { workspace = true }
+ipatool-kit-core = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
+crossterm = { workspace = true }
+zip = { workspace = true }
+toml = { workspace = true }

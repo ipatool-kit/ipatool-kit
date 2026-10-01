@@ -1,6 +1,6 @@
-//! Sync facade over vendored `ipatool-core` (SAP auth + download) and native DAAP purchases.
+//! Sync facade over vendored `ipatool-kit-core` (SAP auth + download) and native DAAP purchases.
 //!
-//! Core patches vs crates.io 0.1.8 / Go majd/ipatool parity (see `vendor/ipatool-core`):
+//! Core patches vs crates.io 0.1.8 / Go majd/ipatool parity (see `vendor/ipatool-kit-core`):
 //! bag `?guid=` + `urlBag`, HTML-safe plist parse, `serialNumber` on product POSTs,
 //! volumeStore→redownload→updateProduct, purchase `jingleDocType`/`status`, auth HTTP
 //! retry, login Content-Type `application/x-www-form-urlencoded`. IPA-only: macOS `.pkg`
@@ -56,7 +56,7 @@ fn note(progress: &mut dyn FnMut(&str), msg: &str) {
     progress(msg);
 }
 
-/// True when ipatool-core SAP framework blobs are already cached under ~/.ipatool/cache.
+/// True when ipatool-kit-core SAP framework blobs are already cached under ~/.ipatool/cache.
 pub fn sap_cache_ready() -> bool {
     let Some(dir) = session::cache_dir() else {
         return false;

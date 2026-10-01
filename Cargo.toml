@@ -2,19 +2,19 @@
 resolver = "2"
 members = [
     "crates/ipatool",
-    "crates/ipa-downloader",
     "vendor/ipatool-core",
 ]
-default-members = ["crates/ipatool", "crates/ipa-downloader"]
+default-members = ["crates/ipatool"]
 
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "1.1.0"
+version = "1.1.1"
 authors = ["ipatool-kit contributors"]
+repository = "https://github.com/ipatool-kit/ipatool-kit"
 
 [workspace.dependencies]
-ipatool = { path = "crates/ipatool" }
+ipatool-kit = { path = "crates/ipatool", version = "1.1.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -28,7 +28,7 @@ plist = "1"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 crossterm = "0.28"
 zip = { version = "2", default-features = false, features = ["deflate"] }
-ipatool-core = { path = "vendor/ipatool-core", version = "0.1.8" }
+ipatool-kit-core = { path = "vendor/ipatool-core", version = "0.2.0" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "time"] }
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "cookies", "stream"] }
