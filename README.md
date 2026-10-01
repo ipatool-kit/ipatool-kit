@@ -4,6 +4,12 @@ Interactive terminal toolkit and Rust library for browsing your App Store librar
 
 > Does **not** crack DRM or bypass Apple licensing. Only apps your Apple ID is entitled to.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ipatool-kit/ipatool-kit/main/assets/demo.gif" alt="ipatool-kit demo (sample data)" width="840">
+</p>
+
+<p align="center"><sub>Animated mockup with sample data — not a live session.</sub></p>
+
 [![crates.io](https://img.shields.io/crates/v/ipatool-kit.svg)](https://crates.io/crates/ipatool-kit)
 [![docs.rs](https://img.shields.io/docsrs/ipatool-kit)](https://docs.rs/ipatool-kit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
